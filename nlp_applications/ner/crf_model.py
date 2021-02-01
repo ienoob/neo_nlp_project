@@ -7,11 +7,11 @@
     @File    : crf_model.py
 
 """
-
+import pickle
 from sklearn_crfsuite import CRF
 from sklearn_crfsuite import scorers
 from sklearn_crfsuite import metrics
-from nlp_applications.data_loader import LoadMsraDataV1
+from nlp_applications.data_loader import LoadMsraDataV1, LoadMsraDataV2
 
 
 def word2features(sent, i):
@@ -48,7 +48,11 @@ def sent2labels(sent):
     return [label for label in sent]
 
 
-msra_data = LoadMsraDataV1("D:\data\\nlp\命名实体识别\data\msra")
+# msra_data = LoadMsraDataV1("D:\data\\nlp\命名实体识别\data\msra")
+
+msra_data = LoadMsraDataV2("D:\data\\nlp\\命名实体识别\\msra_ner_token_level\\")
+
+print(msra_data.train_tag_list[0])
 
 X_train = [sent2features(s) for s in msra_data.train_sentence_list]
 y_train = [sent2labels(s) for s in msra_data.train_tag_list]
@@ -70,10 +74,14 @@ class CRFNerModel(object):
             max_iterations=100,
             all_possible_transitions=True
         )
-        self.save_path = ""
+        self.save_model = "crf.model"
 
     def fit(self, train_x, train_y):
         self.crf.fit(train_x, train_y)
+
+        model_data = pickle.dumps(self.crf)
+        with open(self.save_model, "wb") as f:
+            f.write(model_data)
 
     def predict(self, input_x):
         input_x = list(input_x)
