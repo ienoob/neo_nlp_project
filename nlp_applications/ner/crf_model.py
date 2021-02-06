@@ -119,5 +119,3 @@ crf_mode = CRFNerModel()
 crf_mode.fit(X_train, y_train)
 
 print(crf_mode.extract_ner("1月18日，在印度东北部一座村庄，一头小象和家人走过伐木工人正在清理的区域时被一根圆木难住了。"))
-
-

@@ -103,6 +103,27 @@ class LoadMsraDataV2(object):
 
         return data_list, tag_list
 
+# 关系分类
+class LoaderSemEval2010Task8(object):
+
+    def __init__(self, data_path):
+
+        self.data_path = data_path
+        self.label = ["Other", "Cause-Effect", "Component-Whole",  "Entity-Destination", "Product-Producer",
+                      "Entity-Origin", "Member-Collection", "Message-Topic",
+                      "Content-Container", "Instrument-Agency"]
+
+
+
+class LoaderBaiduKg2019RealtionExtraction(object):
+
+    def __init__(self, data_path):
+
+        self.train_path = data_path+"//train_data.json"
+        self.dev_path = data_path+"//dev_data.json"
+
+        self.data_schema = data_path+"//all_50_schemas.json"
+
 
 
 
