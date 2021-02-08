@@ -790,10 +790,10 @@ def main(_):
   FLAGS.task_name = "MRPC"
   FLAGS.do_train = True
   FLAGS.do_eval = True
-  FLAGS.data_dir = "D:\data\\nlp\GLUE_MRPC\glue_data\MRPC"
-  FLAGS.vocab_file = "D:\data\\bert\cased_L-12_H-768_A-12\cased_L-12_H-768_A-12\\vocab.txt"
-  FLAGS.bert_config_file = "D:\data\\bert\cased_L-12_H-768_A-12\cased_L-12_H-768_A-12\\bert_config.json"
-  FLAGS.init_checkpoint = "D:\data\\bert\cased_L-12_H-768_A-12\cased_L-12_H-768_A-12\\bert_model.ckpt"
+  FLAGS.data_dir = "D:\Work\code\python\\bert_use\glue_data\MRPC"
+  FLAGS.vocab_file = "D:\Work\code\python\\bert_use\pretrained_model\cased_L-12_H-768_A-12\\vocab.txt"
+  FLAGS.bert_config_file = "D:\Work\code\python\\bert_use\pretrained_model\cased_L-12_H-768_A-12\\bert_config.json"
+  FLAGS.init_checkpoint = "D:\Work\code\python\\bert_use\pretrained_model\cased_L-12_H-768_A-12\\bert_model.ckpt"
   FLAGS.max_seq_length = 128
   FLAGS.train_batch_size = 32
   FLAGS.learning_rate = 2e-5
