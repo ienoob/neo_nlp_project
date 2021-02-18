@@ -119,10 +119,139 @@ class LoaderBaiduKg2019RealtionExtraction(object):
 
     def __init__(self, data_path):
 
-        self.train_path = data_path+"//train_data.json"
-        self.dev_path = data_path+"//dev_data.json"
+        self.train_path = data_path+"\\train_data.json"
+        self.dev_path = data_path+"\\dev_data.json"
 
-        self.data_schema = data_path+"//all_50_schemas.json"
+        self.data_schema = data_path+"\\all_50_schemas.json"
+
+
+    def get_train_data(self):
+        with open(self.data_schema, "r", encoding="utf-8") as f:
+            schema = f.read()
+
+        with open(self.train_path, "r", encoding="utf-8") as f:
+            train_data = f.read()
+
+        with open(self.dev_path, "r", encoding="utf-8") as f:
+            dev_data = f.read()
+
+        schema_data = schema.split("\n")
+        self.relation_dict = dict()
+        for schema in schema_data:
+            if not schema.strip():
+                continue
+            schema = json.loads(schema)
+            predicate = schema["predicate"]
+            if predicate not in self.relation_dict:
+                self.relation_dict[predicate] = len(self.relation_dict)
+
+
+        train_data_list = train_data.split("\n")
+        dev_data_list = dev_data.split("\n")
+
+        self.word_index = {
+            "pad": 0,
+            "unk": 1
+        }
+        left_word = []
+        right_word = []
+        mid_word = []
+        left_pos_1 = []
+        left_pos_2 = []
+        right_pos_1 = []
+        right_pos_2 = []
+        mid_pos_1 = []
+        mid_pos_2 = []
+        label = []
+        for data in train_data_list:
+            if not data.strip():
+                continue
+            data = json.loads(data)
+            text = data["text"]
+            left_word_sub = []
+            right_word_sub = []
+            mid_word_sub = []
+            # left_pos_1_sub = []
+            # left_pos_2_sub = []
+            # right_pos_1_sub = []
+            # right_pos_2_sub = []
+            # mid_pos_1_sub = []
+            # mid_pos_2_sub = []
+
+            for t in text:
+                if t not in self.word_index:
+                    self.word_index[t] = len(self.word_index)
+            for spo in data["spo_list"]:
+                object_value = spo["object"]
+                subject_value = spo["subject"]
+                predicate = spo["predicate"]
+                try:
+                    ob_ind = text.index(object_value)
+                    sub_ind = text.index(subject_value)
+                except Exception as e:
+                    continue
+
+                left_ind = -1
+                left_end = -1
+                right_ind = -1
+                right_end = -1
+                if sub_ind > ob_ind:
+                    left_ind = ob_ind
+                    left_end = ob_ind+len(object_value)
+                    right_ind = sub_ind
+                    right_end = sub_ind+len(subject_value)
+                elif sub_ind < ob_ind:
+                    left_ind = sub_ind
+                    left_end = sub_ind+len(subject_value)
+                    right_ind = ob_ind
+                    right_end = ob_ind+len(object_value)
+                else:
+                    print(object_value, subject_value, sub_ind, ob_ind)
+
+
+                for t in text[:right_end]:
+                    left_word_sub.append(self.word_index[t])
+                left_pos_1_sub = list(range(len(text[:right_end])))
+                # left_pos_1_sub = [ii-left_ind for ii in left_pos_1_sub]
+                left_pos_2_sub = list(range(len(text[:right_end])))
+                # left_pos_2_sub = [ii-right_ind for ii in left_pos_2_sub]
+
+                left_word.append(left_word_sub)
+                left_pos_1.append(left_pos_1_sub)
+                left_pos_2.append(left_pos_2_sub)
+
+                for t in text[left_ind:right_end]:
+                    mid_word_sub.append(self.word_index[t])
+                mid_pos_1_sub = list(range(len(text[left_ind:right_end])))
+                mid_pos_2_sub = list(range(len(text[left_ind:right_end])))
+                # mid_pos_2_sub = [ii+left_ind-right_ind for ii in mid_pos_2_sub]
+
+                mid_word.append(mid_word_sub)
+                mid_pos_1.append(mid_pos_1_sub)
+                mid_pos_2.append(mid_pos_2_sub)
+
+                for t in text[left_ind:]:
+                    right_word_sub.append(self.word_index[t])
+                right_pos_1_sub = list(range(len(text[left_ind:])))
+                right_pos_2_sub = list(range(len(text[left_ind:])))
+                # right_pos_2_sub = [ii+left_ind-right_ind for ii in right_pos_2_sub]
+
+                right_word.append(right_word_sub)
+                right_pos_1.append(right_pos_1_sub)
+                right_pos_2.append(right_pos_2_sub)
+
+                label.append([self.relation_dict[predicate]])
+
+        return left_word, right_word, mid_word, left_pos_1, left_pos_2, right_pos_1, right_pos_2, mid_pos_1, mid_pos_2, label
+
+
+
+
+
+
+
+
+
 
 
 
