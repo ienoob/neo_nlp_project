@@ -12,6 +12,7 @@ from sklearn_crfsuite import CRF
 from sklearn_crfsuite import scorers
 from sklearn_crfsuite import metrics
 from nlp_applications.data_loader import LoadMsraDataV1, LoadMsraDataV2
+from nlp_applications.ner.evaluation import metrix
 
 
 def word2features(sent, i):
@@ -88,6 +89,15 @@ class CRFNerModel(object):
         input_feature = [sent2features(input_x)]
         return self.crf.predict(input_feature)
 
+    def load_model(self):
+        with open(self.save_model, "rb") as f:
+            model_data = f.read()
+        self.crf = pickle.loads(model_data)
+
+
+    def predict_list(self, input_list):
+        return self.crf.predict(input_list)
+
     def extract_ner(self, input_x):
         extract_ner = []
         res = self.predict(input_x)
@@ -116,6 +126,12 @@ class CRFNerModel(object):
 
 
 crf_mode = CRFNerModel()
-crf_mode.fit(X_train, y_train)
+crf_mode.load_model()
+# crf_mode.fit(X_train, y_train)
+
+predict_labels = crf_mode.predict_list(X_test)
+true_labels = y_test
+
+print(metrix(true_labels, predict_labels))
 
 print(crf_mode.extract_ner("1月18日，在印度东北部一座村庄，一头小象和家人走过伐木工人正在清理的区域时被一根圆木难住了。"))

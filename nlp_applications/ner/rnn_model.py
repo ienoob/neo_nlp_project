@@ -147,6 +147,11 @@ true_labels = msra_data.test_tag_list
 
 print(metrix(true_labels, predict_labels))
 
+"""
+单层循环神经网络效果是真的不行
+(0.12611958363592352, 0.02271092609141039)
+"""
+
 
 
 
