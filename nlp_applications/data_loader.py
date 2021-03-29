@@ -53,7 +53,7 @@ class LoadMsraDataV2(object):
         self.labels = ["B-AGE", "I-AGE", "B-ANGLE", "I-ANGLE", "B-AREA", "I-AREA", "B-CAPACTITY", "I-CAPACTITY",
                        "B-DATE", "I-DATE", "B-DECIMAL", "I-DECIMAL", "B-DURATION", "I-DURATION",
                        "B-FRACTION", "I-FRACTION", "B-FREQUENCY", "I-FREQUENCY",  "B-INTEGER", "I-INTEGER",
-                       "B-LENGTH", "I-LENGTH" "B-LOCATION", "I-LOCATION", "B-MEASURE", "I-MEASURE",
+                       "B-LENGTH", "I-LENGTH", "B-LOCATION", "I-LOCATION", "B-MEASURE", "I-MEASURE",
                        "B-MONEY", "I-MONEY", "B-ORDINAL", "I-ORDINAL", "B-ORGANIZATION", "I-ORGANIZATION",
                        "B-PERCENT", "I-PERCENT",  "B-PERSON", "I-PERSON", "B-PHONE", "I-PHONE",
                        "B-POSTALCODE", "I-POSTALCODE", "B-RATE", "I-RATE", "B-SPEED", "I-SPEED",
@@ -243,6 +243,132 @@ class LoaderBaiduKg2019RealtionExtraction(object):
                 label.append([self.relation_dict[predicate]])
 
         return left_word, right_word, mid_word, left_pos_1, left_pos_2, right_pos_1, right_pos_2, mid_pos_1, mid_pos_2, label
+
+
+class Document(object):
+
+    def __init__(self, input_id, input_text, input_text_id, input_entity_list, input_relation_list):
+        self._id = input_id
+        self._raw_text = input_text
+        self._text_id = input_text_id
+        self._entity_list = input_entity_list
+        self._relation_list = input_relation_list
+
+
+class Entity(object):
+
+    def __init__(self, input_id, input_text, input_start, input_end):
+        self._id = input_id
+        self._entity_text = input_text
+        self.size = input_end-input_start
+        self._start = input_start
+        self._end = input_end
+
+
+class Relation(object):
+
+    def __init__(self, input_id, input_sub, input_obj):
+        self._id = input_id
+        self._relation_sub = input_sub
+        self._relation_obj = input_obj
+
+
+class LoaderBaiduKg2019RealtionExtractionV2(object):
+
+    def __init__(self, data_path):
+        self.train_path = data_path + "\\train_data.json"
+        self.dev_path = data_path + "\\dev_data.json"
+
+        self.data_schema = data_path + "\\all_50_schemas.json"
+
+        with open(self.data_schema, "r", encoding="utf-8") as f:
+            schema_data = f.read()
+        schema_data_list = schema_data.split("\n")
+        schema_data_list = [json.loads(schema) for schema in schema_data_list if schema.strip()]
+
+        self.relation_type = len(schema_data_list)+1
+        self.relation2id = {
+            "no_relation": 0
+        }
+        self.entity2id = {
+            "no_entity": 0
+        }
+
+        for relation in schema_data_list:
+            subject = relation["subject_type"]
+            object = relation["object_type"]
+            predicate = relation["predicate"]
+
+            if subject not in self.entity2id:
+                self.entity2id[subject] = len(self.entity2id)
+            if object not in self.entity2id:
+                self.entity2id[object] = len(self.entity2id)
+            if predicate not in self.relation2id:
+                self.relation2id[predicate] = len(self.relation2id)
+
+        with open(self.train_path, "r", encoding="utf-8") as f:
+            train_data = f.read()
+
+        train_data_list = train_data.split("\n")
+        train_data_list = [json.loads(data) for data in train_data_list if data.strip()]
+
+        self.char2id = {
+            "<pad>": 0,
+            "<unk>": 1
+        }
+
+        self.documents = []
+        for i, train_data in enumerate(train_data_list):
+
+            train_text = train_data["text"]
+            train_text_id = []
+            for tt in train_text:
+                if tt not in self.char2id:
+                    self.char2id[tt] = len(self.char2id)
+                train_text_id.append(self.char2id[tt])
+
+            spo_list = train_data["spo_list"]
+
+            entity_list = []
+            relation_list = []
+
+            state = 0
+            for spo in spo_list:
+                sub_subject = spo["subject"]
+                sub_subject_type = spo["subject_type"]
+                try:
+                    sub_indx = train_text.index(sub_subject)
+                except Exception as e:
+                    # print(e, train_text, sub_subject)
+                    state = 1
+                    break
+
+                entity_sub = Entity(self.entity2id[sub_subject_type], sub_subject, sub_indx, sub_indx+len(sub_subject))
+
+                entity_list.append(entity_sub)
+
+                sub_object = spo["object"]
+                sub_object_type = spo["object_type"]
+                try:
+                    obj_indx = train_text.index(sub_object)
+                except Exception as e:
+                    # print(e, train_text, sub_object)
+                    state = 1
+                    break
+                entity_obj = Entity(self.entity2id[sub_object_type], sub_object, obj_indx,
+                                    obj_indx + len(sub_object))
+                entity_list.append(entity_obj)
+
+                predicate_type = spo["predicate"]
+                sub_relation = Relation(self.relation2id[predicate_type], entity_sub, entity_obj)
+                relation_list.append(sub_relation)
+            if state:
+                continue
+            doc = Document(i, train_text, train_text_id, entity_list, relation_list)
+            self.documents.append(doc)
+
+
+
 
 
 
