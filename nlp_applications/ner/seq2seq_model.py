@@ -9,6 +9,8 @@
 """
 import tensorflow as tf
 from nlp_applications.data_loader import LoadMsraDataV2
+from nlp_applications.ner.evaluation import metrix
+
 
 
 msra_data = LoadMsraDataV2("D:\data\\nlp\\命名实体识别\\msra_ner_token_level\\")
@@ -161,6 +163,7 @@ def predict(input_s_list):
         decoder_out, input_decoder_state = decoder(input_xy, input_state=input_decoder_state)
         decoder_out_fi = decoder_out[:,-1,:]
         decoder_out_logits = tf.argmax(decoder_out_fi, axis=-1)
+        decoder_out_logits = tf.reshape(decoder_out_logits, (len(input_s_list), -1))
         decoder_out_logits =  tf.cast(decoder_out_logits, dtype=tf.int64)
         if input_out is None:
             input_out = decoder_out_logits
@@ -178,6 +181,15 @@ def predict(input_s_list):
 
 out_label = predict(["1月18日，在印度东北部一座村庄，一头小象和家人走过伐木工人正在清理的区域时被一根圆木难住了。"])
 print(out_label)
+
+predict_labels = []
+for test_sentence in msra_data.test_sentence_list:
+    predict_label = predict([test_sentence])
+    predict_labels.append(predict_label[0])
+# predict_labels = predict(msra_data.test_sentence_list)
+true_labels = msra_data.test_tag_list
+
+print(metrix(true_labels, predict_labels))
 
 
 
