@@ -14,6 +14,7 @@ import tensorflow as tf
 vocab_size = 10
 embed_size = 64
 data_maxlen = 128
+class_num = 10
 
 def position_embed(input_batch):
 
@@ -119,12 +120,26 @@ class Decoder(tf.keras.layers.Layer):
 
     def __init__(self, seq_num, header_num=8):
         super(Decoder, self).__init__()
-        self.self_attention_layer = MultiHeader(head_num=header_num, input_length=seq_num)
+        self.mask_attention_layer = MultiHeader(head_num=header_num, input_length=seq_num)
         self.normal_layer1 = tf.keras.layers.LayerNormalization()
         self.encoder_attention_layer = MultiHeader(head_num=header_num, input_length=seq_num)
         self.normal_layer2 = tf.keras.layers.LayerNormalization()
         self.feedward = tf.keras.layers.Dense(embed_size)
         self.normal_layer3 = tf.keras.layers.LayerNormalization()
+
+    def call(self, inputs, **kwargs):
+        input_mask_attention = self.mask_attention_layer(inputs)
+        input_value = inputs+input_mask_attention
+        input_value = self.normal_layer1(input_value)
+        input_value_att = self.encoder_attention_layer(input_value)
+        input_value = input_value + input_value_att
+        input_value = self.normal_layer2(input_value)
+        input_value_feed = self.feedward(input_value)
+        input_value = input_value + input_value_feed
+        input_value = self.normal_layer3(input_value)
+
+        return input_value
+
 
 
 class Transformers(tf.keras.models.Model):
@@ -135,6 +150,10 @@ class Transformers(tf.keras.models.Model):
         self.embed = tf.keras.layers.Embedding(vocab_size, embed_size)
         self.output_embed = tf.keras.layers.Embedding(vocab_size, embed_size)
         self.encoders = [Encoder(seq_num, header_num) for _ in range(encoder_num)]
-        self.decoders = []
+        self.decoders = [Decoder(seq_num, header_num) for _ in range(encoder_num)]
 
+        self.linear = tf.keras.layers.Dense(class_num, activation="softmax")
+
+    def call(self, inputs):
+        pass
 
