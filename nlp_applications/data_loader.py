@@ -368,6 +368,111 @@ class LoaderBaiduKg2019RealtionExtractionV2(object):
             self.documents.append(doc)
 
 
+def load_json_line_data(input_data_path):
+    with open(input_data_path, encoding="utf-8") as f:
+        data = f.read()
+
+    for da in data.split("\n"):
+        if not da.strip():
+            continue
+        yield json.loads(da)
+
+
+class LoaderDuie2Dataset(object):
+    """
+        DuIE2.0是业界规模最大的基于schema的中文关系抽取数据集，
+        包含超过43万三元组数据、21万中文句子及48个预定义的关系类型。
+        表1 展示了其中43个简单O值的关系类型及对应的例子，
+        表2 展示了其中5个复杂O值的关系类型及对应的例子。
+        数据集中的句子来自百度百科、百度贴吧和百度信息流文本。
+    """
+    def __init__(self, data_path):
+        self.schema_path = data_path + "//duie_schema//duie_schema.json"
+        self.train_path = data_path + "//duie_sample.json//duie_sample.json"
+
+        schema_data_list = load_json_line_data(self.schema_path)
+        train_data_list = load_json_line_data(self.train_path)
+
+        self.relation2id = dict()
+        self.subject2id = dict()
+        self.object2id = dict()
+        self.entity2id = dict()
+
+        for schema in schema_data_list:
+            predicate = schema["predicate"]
+            if predicate not in self.relation2id:
+                self.relation2id[predicate] = len(self.relation2id)
+            subject = schema["subject_type"]
+            object = schema["object_type"]["@value"]
+
+            if subject not in self.subject2id:
+                self.subject2id[subject] = len(self.subject2id)
+
+            if object not in self.object2id:
+                self.object2id[object] = len(self.object2id)
+
+            if subject not in self.entity2id:
+                self.entity2id[subject] = len(self.entity2id)
+
+            if object not in self.entity2id:
+                self.entity2id[object] = len(self.entity2id)
+
+        self.char2id = {
+            "<pad>": 0,
+            "<unk>": 1
+        }
+
+        self.documents = []
+        for i, train_data in enumerate(train_data_list):
+
+            train_text = train_data["text"]
+            train_text_id = []
+            for tt in train_text:
+                if tt not in self.char2id:
+                    self.char2id[tt] = len(self.char2id)
+                train_text_id.append(self.char2id[tt])
+
+            spo_list = train_data["spo_list"]
+
+            entity_list = []
+            relation_list = []
+
+            state = 0
+            for spo in spo_list:
+                sub_subject = spo["subject"]
+                sub_subject_type = spo["subject_type"]
+                try:
+                    sub_indx = train_text.index(sub_subject)
+                except Exception as e:
+                    # print(e, train_text, sub_subject)
+                    state = 1
+                    break
+
+                entity_sub = Entity(self.entity2id[sub_subject_type], sub_subject, sub_indx,
+                                    sub_indx + len(sub_subject))
+
+                entity_list.append(entity_sub)
+
+                sub_object = spo["object"]
+                sub_object_type = spo["object_type"]
+                try:
+                    obj_indx = train_text.index(sub_object)
+                except Exception as e:
+                    # print(e, train_text, sub_object)
+                    state = 1
+                    break
+                entity_obj = Entity(self.entity2id[sub_object_type], sub_object, obj_indx,
+                                    obj_indx + len(sub_object))
+                entity_list.append(entity_obj)
+
+                predicate_type = spo["predicate"]
+                sub_relation = Relation(self.relation2id[predicate_type], entity_sub, entity_obj)
+                relation_list.append(sub_relation)
+            if state:
+                continue
+            doc = Document(i, train_text, train_text_id, entity_list, relation_list)
+            self.documents.append(doc)
+
 
 
 
