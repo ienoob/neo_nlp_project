@@ -65,7 +65,16 @@ def get_token(h, x, token):
 
 def batch_index(first_list, index_list):
     batch_num = first_list.shape[0]
-    return tf.stack([first_list[i][index_list[i]] for i in range(batch_num)])
+    relation_num = index_list.shape[1]
+
+    new_data = []
+    for i in range(batch_num):
+        batch_data = []
+        for j in range(relation_num):
+            batch_data.append(tf.gather(first_list, axis=1, indices=index_list[i][j]))
+        new_data.append(batch_data)
+
+    return tf.cast(new_data, dtype=tf.float32)
 
 
 class SpERt(tf.keras.models.Model):
@@ -93,14 +102,17 @@ class SpERt(tf.keras.models.Model):
         size_embeddings = self.size_embed(entity_sizes)
         entity_clf, entity_spans_pool = self._classify_entities(h, entity_masks, size_embeddings)
 
-        h_large = tf.repeat(tf.expand_dims(h, axis=1), repeat=max(min(relations.shape[1], self._max_pairs)), axis=1)
-        rel_clf = tf.zeros([batch_size, relations.shape[1], self._relation_types])
-        for i in range(0, relations.shape[1], self._max_pairs):
+        h_expand = tf.expand_dims(h, axis=1)
+        h_large = tf.repeat(h_expand, repeats=max(min(relations.shape[1], self._max_pairs), 1), axis=1)
+        # rel_clf = tf.zeros([batch_size, relations.shape[1], self._relation_types])
+        rel_clf = self._classify_relations(entity_spans_pool, size_embeddings,
+                                           relations, rel_masks, h_large, 0)
+        # for i in range(0, relations.shape[1], self._max_pairs):
             # classify relation candidates
-            chunk_rel_logits = self._classify_relations(entity_spans_pool, size_embeddings,
-                                                        relations, rel_masks, h_large, i)
-            rel_clf[:, i:i + self._max_pairs, :] = chunk_rel_logits
-        return entity_clf
+            # rel_clf = self._classify_relations(entity_spans_pool, size_embeddings,
+            #                                             relations, rel_masks, h_large, i)
+            # rel_clf[:, i:i + self._max_pairs, :] = chunk_rel_logits
+        return entity_clf, rel_clf
 
 
     def _classify_entities(self, input_embed, input_entity_masks: tf.Tensor, input_size_embed: tf.Tensor):
@@ -143,7 +155,6 @@ class SpERt(tf.keras.models.Model):
     def predict(self):
         pass
 
-tf.keras.losses.B
 
 
 spert = SpERt(relation_type, entity_type, 10)
@@ -155,7 +166,7 @@ sample_entity_sizes = tf.constant([[2, 3, 2]])
 sample_relation = tf.constant([[[0, 1]]])
 sample_relation_mask = tf.constant([[1, 1]])
 
-spert(sample_encoding, sample_mask, sample_entity_mask, sample_entity_sizes, sample_relation, sample_relation_mask)
+entity_res, relation_res = spert(sample_encoding, sample_mask, sample_entity_mask, sample_entity_sizes, sample_relation, sample_relation_mask)
 
 
 
