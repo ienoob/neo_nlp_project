@@ -254,6 +254,18 @@ class Document(object):
         self._entity_list = input_entity_list
         self._relation_list = input_relation_list
 
+    @property
+    def text_id(self):
+        return self._text_id
+
+    @property
+    def entity_list(self):
+        return self._entity_list
+
+    @property
+    def relation_list(self):
+        return self._relation_list
+
 
 class Entity(object):
 
@@ -448,6 +460,7 @@ class LoaderDuie2Dataset(object):
                 except Exception as e:
                     # print(e, train_text, sub_subject)
                     state = 1
+                    print(e)
                     break
 
                 entity_sub = Entity(self.entity2id[sub_subject_type], sub_subject, sub_indx,
@@ -455,13 +468,14 @@ class LoaderDuie2Dataset(object):
 
                 entity_list.append(entity_sub)
 
-                sub_object = spo["object"]
-                sub_object_type = spo["object_type"]
+                sub_object = spo["object"]["@value"]
+                sub_object_type = spo["object_type"]["@value"]
                 try:
                     obj_indx = train_text.index(sub_object)
                 except Exception as e:
                     # print(e, train_text, sub_object)
                     state = 1
+                    print(e)
                     break
                 entity_obj = Entity(self.entity2id[sub_object_type], sub_object, obj_indx,
                                     obj_indx + len(sub_object))
@@ -506,6 +520,19 @@ class LoaderBaiduDueeV1(object):
 
         train_data = load_json_line_data(train_path)
 
+
+class LoaderBaiduDueeFin(object):
+    """
+    DuEE-fin是百度最新发布的金融领域篇章级事件抽取数据集，包含13个事件类型的1.17万个篇章，
+    同时存在部分非目标篇章作为负样例。事件类型来源于常见的金融事件，具体的事件类型及对应角色见表4。
+    数据集中的篇章来自金融领域的新闻和公告，覆盖了真实场景中诸多问题。
+    """
+
+    def __init__(self, data_path):
+        schema_path = data_path + "\\duee_fin_schema\\duee_fin_event_schema.json"
+        schema_data = load_json_line_data(schema_path)
+
+        train_path = data_path + "\\duee_fin_sample.json\\duee_fin_sample.json"
 
 
 

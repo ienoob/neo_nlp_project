@@ -10,32 +10,123 @@
 
 
 """
+import numpy as np
 import tensorflow as tf
 from nlp_applications.data_loader import LoaderDuie2Dataset
 
+batch_num = 2
 data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取\\"
 data_loader = LoaderDuie2Dataset(data_path)
 
+print(len(data_loader.documents))
+
+
+def sample_single_data(doc):
+    pass
 
 def get_sample_data(batch):
 
-    batch_data = []
-    ond_data = dict()
-    i = 0
+    data_len = data_loader.data_len
+    batch_size = int(data_len//batch)
+
+
+    encodings = []
+    context_masks = []
+    entity_spans = []
+    entity_masks = []
+    entity_size = []
+    relation_entity_spans = []
+    relation_labels = []
+    relation_masks = []
+
     for doc in data_loader.documents:
-        raw_text = doc.train_text
-        text_ids = doc.train_text_id
+        text_ids = doc.text_id
+        text_len = len(text_ids)
 
         entity_list = doc.entity_list
         relation_list = doc.relation_list
 
         entity_span = []
+        sub_entity_masks = []
         sub_entity_size = []
+        entity_loc_set = set()
         for entity in entity_list:
+            entity_mask = [1 if ind >= entity._start and ind < entity._end else 0 for ind in range(text_len)]
+            sub_entity_masks.append(entity_mask)
+            entity_span.append(entity._id)
             sub_entity_size.append(entity.size)
+            entity_loc_set.add((entity._start, entity._end))
 
-        if i >= batch:
-            break
+        for j in range(text_len-1):
+            for k in range(j+1, text_len):
+                if (j, k) in entity_loc_set:
+                    continue
+                entity_mask = [1 if ind >= j and ind < k else 0 for ind in range(text_len)]
+                sub_entity_masks.append(entity_mask)
+                entity_span.append(0)
+                sub_entity_size.append(k-j)
+
+        encodings.append(text_ids)
+        context_masks.append([1 for _ in text_ids])
+        entity_spans.append(entity_span)
+        entity_masks.append(sub_entity_masks)
+        entity_size.append(sub_entity_size)
+        entity_d = dict()
+
+        relation_entity_data = dict()
+        relation_entity_set = set()
+        for rl in relation_list:
+            relation_entity_data[(rl._relation_sub._id, rl._relation_obj._id)] = rl._id
+            relation_entity_set.add(rl._relation_sub._id)
+            entity_d[rl._relation_sub._id] = rl._relation_sub
+            relation_entity_set.add(rl._relation_obj._id)
+            entity_d[rl._relation_obj._id] = rl._relation_obj
+
+        relation_entity_span = []
+        relation_entity_list = list(relation_entity_set)
+        relation_label = []
+        relation_mask = []
+        for i, ei in enumerate(relation_entity_list):
+            for j, ej in enumerate(relation_entity_list):
+                if i == j:
+                    continue
+
+                relation_entity_span.append((ei, ej))
+                relation_label.append(relation_entity_data.get((ei, ej), 0))
+
+                sub = entity_d[ei]
+                obj = entity_d[ej]
+
+                start = sub._end if sub._end > obj._start else obj._end
+                end = obj._start if sub._end > obj._start else sub._start
+
+                relation_maskv = [1 if ind >= start and ind < end else 0 for ind in range(text_len)]
+                relation_mask.append(relation_maskv)
+
+        relation_entity_spans.append(relation_entity_span)
+        relation_labels.append(relation_label)
+        relation_masks.append(relation_mask)
+
+        if len(encodings) == batch:
+            yield {
+                "encoding": tf.cast(encodings, dtype=tf.int64),
+                "context_masks": tf.cast(context_masks, dtype=tf.int64),
+                "entity_spans": tf.cast(entity_spans, dtype=tf.int64),
+                "entity_masks": tf.cast(entity_masks, dtype=tf.int64),
+                "entity_size": tf.cast(entity_size, dtype=tf.int64),
+                "relation_entity_spans": tf.cast(relation_entity_spans, dtype=tf.int64),
+                "relation_labels": tf.cast(relation_labels, dtype=tf.int64),
+                "relation_masks": tf.cast(relation_masks, dtype=tf.int64),
+            }
+            encodings = []
+            context_masks = []
+            entity_spans = []
+            entity_masks = []
+            entity_size = []
+            relation_entity_spans = []
+            relation_labels = []
+            relation_masks = []
+
 
 char_size = len(data_loader.char2id)
 embed_size = 64
@@ -44,8 +135,12 @@ size_embed_size = 64
 relation_type = len(data_loader.relation2id)
 entity_type = len(data_loader.entity2id)
 
-class BatchDataset(object):
-    pass
+
+data_batch = get_sample_data(batch_num)
+
+for dt in data_batch:
+    print(dt)
+    break
 
 
 def get_token(h, x, token):
@@ -166,7 +261,18 @@ sample_entity_sizes = tf.constant([[2, 3, 2]])
 sample_relation = tf.constant([[[0, 1]]])
 sample_relation_mask = tf.constant([[1, 1]])
 
-entity_res, relation_res = spert(sample_encoding, sample_mask, sample_entity_mask, sample_entity_sizes, sample_relation, sample_relation_mask)
+sample_entity_res, sample_relation_res = spert(sample_encoding, sample_mask, sample_entity_mask, sample_entity_sizes, sample_relation, sample_relation_mask)
+
+
+print(sample_entity_res.shape)
+print(sample_relation_res.shape)
+
+sample_entity_label = tf.constant([[1, 2, 3]])
+sample_relation_label = tf.constant(([[1]]))
+
+loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+print(loss(sample_entity_label, sample_entity_res))
+print(loss(sample_relation_label, sample_relation_res))
 
 
 
