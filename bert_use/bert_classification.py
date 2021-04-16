@@ -380,6 +380,69 @@ class ColaProcessor(DataProcessor):
     return examples
 
 
+class SimProcessor(DataProcessor):
+  """Processor for the Sim task"""
+
+  # read tsv
+  def get_train_examples(self, data_dir):
+    """See base class."""
+    lines = self._read_tsv(os.path.join(data_dir, "train.tsv"))
+    train_data = []
+    for (i, line) in enumerate(lines):
+      if i == 0:
+        continue
+      guid = "train-%d" % (i)
+      text_a = tokenization.convert_to_unicode(line[1])
+      # text_b = tokenization.convert_to_unicode(line[7])
+      label = tokenization.convert_to_unicode(line[0])
+      train_data.append(
+          InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
+    return train_data
+
+  # read csv
+  # def get_train_examples(self, data_dir):
+  #   file_path = os.path.join(data_dir, 'train.csv')
+  #   train_df = pd.read_csv(file_path, encoding='utf-8')
+  #   train_data = []
+  #   for index, train in enumerate(train_df.values):
+  #       guid = 'train-%d' % index
+  #       text_a = tokenization.convert_to_unicode(str(train[0]))
+  #       # text_b = tokenization.convert_to_unicode(str(train[1]))
+  #       label = str(train[1])
+  #       train_data.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
+  #   return train_data
+
+  # read txt
+  # def get_train_examples(self, data_dir):
+  #   file_path = os.path.join(data_dir, 'train_sentiment.txt')
+  #   f = open(file_path, 'r')
+  #   train_data = []
+  #   index = 0
+  #   for line in f.readlines():
+  #       guid = 'train-%d' % index
+  #       line = line.replace("\n", "").split("\t")
+  #       text_a = tokenization.convert_to_unicode(str(line[1]))
+  #       label = str(line[2])
+  #       train_data.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
+  #       index += 1
+  #   return train_data
+
+  # read tsv
+  def get_dev_examples(self, data_dir):
+    """See base class."""
+    lines = self._read_tsv(os.path.join(data_dir, "dev.tsv"))
+    dev_data = []
+    for (i, line) in enumerate(lines):
+        if i == 0:
+            continue
+        guid = "dev-%d" % (i)
+        text_a = tokenization.convert_to_unicode(line[1])
+        # text_b = tokenization.convert_to_unicode(line[7])
+        label = tokenization.convert_to_unicode(line[0])
+        dev_data.append(
+                InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
+    return dev_data
+
 def convert_single_example(ex_index, example, label_list, max_seq_length,
                            tokenizer):
   """Converts a single `InputExample` into a single `InputFeatures`."""
@@ -807,6 +870,7 @@ def main(_):
       "mnli": MnliProcessor,
       "mrpc": MrpcProcessor,
       "xnli": XnliProcessor,
+      "sim": SimProcessor
   }
 
   tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case,
@@ -992,9 +1056,25 @@ def main(_):
 
 
 if __name__ == "__main__":
+  # FLAGS.data_dir = "D:\Work\code\python\\bert_use\data"
+  # FLAGS.task_name = "sim"
+  # FLAGS.vocab_file = "D:\Work\code\python\\bert_use\pretrained_model\chinese_L-12_H-768_A-12\\vocab.txt"
+  # FLAGS.bert_config_file = "D:\Work\code\python\\bert_use\pretrained_model\chinese_L-12_H-768_A-12\\bert_config.json"
+  # FLAGS.output_dir = "D:\\tmp\sim"
+  # FLAGS.do_train = True
+  # FLAGS.do_eval = True
+  # FLAGS.init_checkpoint = "D:\Work\code\python\\bert_use\pretrained_model\chinese_L-12_H-768_A-12\\bert_model.ckpt"
+  # FLAGS.max_seq_length = 300
+  # FLAGS.train_batch_size = 16
+  # FLAGS.learning_rate = 5e-5
+  # FLAGS.num_train_epochs = 3.0
+
   # flags.mark_flag_as_required("data_dir")
   # flags.mark_flag_as_required("task_name")
   # flags.mark_flag_as_required("vocab_file")
   # flags.mark_flag_as_required("bert_config_file")
   # flags.mark_flag_as_required("output_dir")
+  """
+  python run_cf.py --data_dir=data --task_name=sim --vocab_file=pretrained_model/chinese_L-12_H-768_A-12/vocab.txt --bert_config_file=pretrained_model/chinese_L-12_H-768_A-12/bert_config.json --output_dir=tmp/sim_model --do_train=true --do_eval=true --init_checkpoint=pretrained_model/chinese_L-12_H-768_A-12/bert_model.ckpt --max_seq_length=300 --train_batch_size=16 --learning_rate=5e-5 --num_train_epochs=3.0
+  """
   tf.app.run()
