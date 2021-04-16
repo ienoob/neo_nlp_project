@@ -713,15 +713,16 @@ if __name__ == "__main__":
     FLAGS.do_train = True
     FLAGS.do_eval = True
     FLAGS.do_predict = True
-    FLAGS.data_dir = "ner2data"
-    FLAGS.vocab_file = "pretrained_model/cased_L-12_H-768_A-12/vocab.txt"
-    FLAGS.bert_config_file = "pretrained_model/cased_L-12_H-768_A-12/bert_config.json"
-    FLAGS.init_checkpoint = "pretrained_model/cased_L-12_H-768_A-12/bert_model.ckpt"
+    FLAGS.data_dir = "D:\Work\code\python\\bert_use\\ner2data"
+    FLAGS.vocab_file = "D:\Work\code\python\\bert_use\pretrained_model\cased_L-12_H-768_A-12/vocab.txt"
+    FLAGS.bert_config_file = "D:\Work\code\python\\bert_use\pretrained_model\cased_L-12_H-768_A-12\\bert_config.json"
+    FLAGS.init_checkpoint = "D:\Work\code\python\\bert_use\pretrained_model\cased_L-12_H-768_A-12\\bert_model.ckpt"
+    FLAGS.middle_output = "D:\\tmp\middle_output"
     FLAGS.max_seq_length = 128
     FLAGS.train_batch_size = 32
     FLAGS.learning_rate = 2e-5
     FLAGS.num_train_epochs = 3.0
-    FLAGS.output_dir = "./output/result_dir"
+    FLAGS.output_dir = "D:\\tmp\\result_dir"
 
     # flags.mark_flag_as_required("data_dir")
     # flags.mark_flag_as_required("task_name")

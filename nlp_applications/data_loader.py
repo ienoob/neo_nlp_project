@@ -489,6 +489,66 @@ class LoaderDuie2Dataset(object):
             doc = Document(i, train_text, train_text_id, entity_list, relation_list)
             self.documents.append(doc)
 
+class Argument(object):
+
+    def __init__(self, input_argument, input_role, input_start_index):
+        self._argument = input_argument
+        self._role = input_role
+        self._start = input_start_index
+
+
+class Event(object):
+    def __init__(self, input_id, input_trigger, input_trigger_start):
+        self._id = input_id
+        self._trigger = input_trigger
+        self._trigger_start = input_trigger_start
+        self._arguments = []
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def trigger(self):
+        return self._trigger
+
+    @property
+    def trigger_start(self):
+        return self._trigger_start
+
+    @property
+    def arguments(self):
+        return self._arguments
+
+    def add_argument(self, input_argument):
+        self._arguments.append(input_argument)
+
+
+class EventDocument(object):
+    def __init__(self, input_id, input_text, input_text_id):
+        self._id = input_id
+        self._text = input_text
+        self._text_id = input_text_id
+        self._event_list = []
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def text(self):
+        return self._text
+
+    @property
+    def text_id(self):
+        return self._text_id
+
+    @property
+    def event_list(self):
+        return self._event_list
+
+    def add_event(self, input_event):
+        self._event_list.append(input_event)
 
 class LoaderBaiduDueeV1(object):
     """
@@ -511,15 +571,49 @@ class LoaderBaiduDueeV1(object):
 
         schema_data = load_json_line_data(schema_path)
 
-        event_dict = dict()
+        self.event2id = {
+            "none_event": 0
+        }
         for schema in schema_data:
-            if schema not in event_dict:
-                event_dict[schema["event_type"]] = len(event_dict)
+            event_type = schema["event_type"]
+            if event_type not in self.event2id:
+                self.event2id[event_type] = len(self.event2id)
 
-        train_path = data_path + "\\duee_sample.json\\duee_sample.json"
+        train_path = data_path + "\\duee_train.json\\duee_train.json"
 
+        self.document = []
+        self.char2id = {
+            "$pad$": 0,
+            "$unk$": 1
+        }
         train_data = load_json_line_data(train_path)
+        for i, sub_train_data in enumerate(train_data):
 
+            text = sub_train_data["text"]
+            text_id = []
+
+            for char in text:
+                if char not in self.char2id:
+                    self.char2id[char] = len(self.char2id)
+                text_id.append(self.char2id[char])
+
+            sub_doc = EventDocument(i, text, text_id)
+            for sub_event in sub_train_data["event_list"]:
+                event_id = self.event2id[sub_event["event_type"]]
+                sub_trigger = sub_event["trigger"]
+                sub_trigger_start_index = sub_event["trigger_start_index"]
+
+                event = Event(event_id, sub_trigger, sub_trigger_start_index)
+
+                for sub_argument in sub_event["arguments"]:
+                    sub_arg_index = sub_argument["argument_start_index"]
+                    sub_arg_role = sub_argument["role"]
+                    sub_arg_value = sub_argument["argument"]
+
+                    argument = Argument(sub_arg_value, sub_arg_role, sub_arg_index)
+                    event.add_argument(argument)
+                sub_doc.add_event(event)
+            self.document.append(sub_doc)
 
 class LoaderBaiduDueeFin(object):
     """
