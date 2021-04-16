@@ -12,6 +12,7 @@ bio 序列标注模型
 4）seq2seq + attention + crf
 5）transformer + crf
 6）bert + crf
+7）pointer_network
 
 指针网络标注模型
 
