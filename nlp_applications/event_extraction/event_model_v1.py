@@ -5,7 +5,7 @@
 from typing import List
 import numpy as np
 import tensorflow as tf
-from nlp_applications.data_loader import LoaderBaiduDueeV1, EventDocument, Event
+from nlp_applications.data_loader import LoaderBaiduDueeV1, EventDocument, Event, Argument
 # from transformers import BertTokenizer, TFBertModel, TFBertPreTrainedModel, BertConfig
 
 sample_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\句子级事件抽取\\"
@@ -60,14 +60,20 @@ def sample_single_doc(input_doc: EventDocument):
     event_list: List[Event] = input_doc.event_list
     label_data = np.zeros(event_num)
     trigger_loc = []
+    event_arguments = []
     for e in event_list:
+        arguments = []
         label_data[e.id] = 1
         trigger_loc.append((e.trigger_start, e.trigger_start+len(e.trigger)-1, e.id))
+        for e_a in e.arguments:
+            arguments.append((e_a.start, e_a.start+len(e_a.argument)-1, bd_data_loader.argument_role2id[e_a.role]))
+        event_arguments.append(arguments)
 
     return {
         "encoding": tf.cast(text_id, dtype=tf.int64),
         "event_label": tf.cast(label_data, dtype=tf.int64),
-        "trigger_loc": trigger_loc
+        "trigger_loc": trigger_loc,
+        "event_arguments": event_arguments
     }
 
 
@@ -78,6 +84,7 @@ class UNModel(tf.keras.models.Model):
         # self.bert = TFBertModel.from_pretrained(config)
         self.embed = tf.keras.layers.Embedding(vocab_size, embed_size)
         self.lstm = tf.keras.layers.LSTM(lstm_size, return_sequences=True)
+        self.drop_out = tf.keras.layers.Dropout(0.5)
         self.event_classifier = tf.keras.layers.Dense(event_num, activation="sigmoid")
         self.tagger_start = tf.keras.layers.Dense(event_num, activation="softmax")
         self.tagger_end = tf.keras.layers.Dense(event_num, activation="softmax")
@@ -87,12 +94,12 @@ class UNModel(tf.keras.models.Model):
         seq = self.lstm(x)
 
         last_seq = seq[:,-1,:]
+        last_seq = self.drop_out(last_seq)
         event_label = self.event_classifier(last_seq)
         tagger_start = self.tagger_start(seq)
         tagger_end = self.tagger_end(seq)
 
         return event_label, tagger_start, tagger_end
-
 
 um_model = UNModel()
 optimizer = tf.keras.optimizers.Adam()

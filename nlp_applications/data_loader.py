@@ -489,12 +489,25 @@ class LoaderDuie2Dataset(object):
             doc = Document(i, train_text, train_text_id, entity_list, relation_list)
             self.documents.append(doc)
 
+
 class Argument(object):
 
     def __init__(self, input_argument, input_role, input_start_index):
         self._argument = input_argument
         self._role = input_role
         self._start = input_start_index
+
+    @property
+    def argument(self):
+        return self._argument
+
+    @property
+    def role(self):
+        return self._role
+
+    @property
+    def start(self):
+        return self._start
 
 
 class Event(object):
@@ -586,6 +599,9 @@ class LoaderBaiduDueeV1(object):
             "$pad$": 0,
             "$unk$": 1
         }
+        self.argument_role2id = {
+            "$unk$": 0
+        }
         train_data = load_json_line_data(train_path)
         for i, sub_train_data in enumerate(train_data):
 
@@ -610,10 +626,14 @@ class LoaderBaiduDueeV1(object):
                     sub_arg_role = sub_argument["role"]
                     sub_arg_value = sub_argument["argument"]
 
+                    if sub_arg_role not in self.argument_role2id:
+                        self.argument_role2id[sub_arg_role] = len(self.argument_role2id)
+
                     argument = Argument(sub_arg_value, sub_arg_role, sub_arg_index)
                     event.add_argument(argument)
                 sub_doc.add_event(event)
             self.document.append(sub_doc)
+
 
 class LoaderBaiduDueeFin(object):
     """
