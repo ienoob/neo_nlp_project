@@ -8,6 +8,10 @@ import tensorflow as tf
 from nlp_applications.data_loader import LoaderBaiduDueeV1, EventDocument, Event, Argument
 # from transformers import BertTokenizer, TFBertModel, TFBertPreTrainedModel, BertConfig
 
+"""
+    这个是一个baseline 模型，针对句子级别的数据
+"""
+
 sample_path = "D:\\data\\句子级事件抽取\\"
 bd_data_loader = LoaderBaiduDueeV1(sample_path)
 
@@ -148,7 +152,7 @@ def sample_single_doc(input_doc: EventDocument):
 #         }
 
 boundaries = [100000, 110000]
-values = [0.1, 0.01, 0.001]
+values = [0.001, 0.0001, 0.00001]
 
 lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(boundaries, values)
 
@@ -161,6 +165,66 @@ def repeat_data(input_feature, input_event_label_ids):
             out_data.append(sub_feature)
 
     return tf.cast(out_data, dtype=tf.float32)
+
+
+def get_data_loc(input_trigger_start, input_trigger_end, input_seq):
+
+    input_trigger_start_ind = tf.argmax(input_trigger_start, axis=2)
+    input_trigger_end_ind = tf.argmax(input_trigger_end, axis=2)
+    batch_num = input_trigger_start_ind.shape[0]
+    batch_len = input_trigger_start_ind.shape[1]
+
+    span_max = 10
+    event_res = []
+    arg_feature = []
+    arg_mask = []
+    for i in range(batch_num):
+        start_one = input_trigger_start_ind[i]
+        end_one = input_trigger_end_ind[i]
+        for j, x in enumerate(start_one):
+            if x == 0:
+                continue
+            for k, y in enumerate(end_one):
+                if k < j:
+                    continue
+                if k-j > span_max:
+                    continue
+                if x == y:
+                    event_res.append((i, j, k, x.numpy()))
+                    arg_feature.append(input_seq[i])
+                    event_one_mask = np.ones(batch_len)*-1e30
+                    event_one_mask[j:k+1] = 0
+                    arg_mask.append(event_one_mask)
+    arg_feature = tf.cast(arg_feature, dtype=tf.float32)
+    arg_mask = tf.cast(arg_mask, dtype=tf.float32)
+    e_m = tf.expand_dims(arg_mask, axis=-1)
+    mask_arg = arg_feature+e_m
+
+    argument_feature = tf.concat([arg_feature, mask_arg], axis=2)
+    return event_res, argument_feature
+
+
+def get_start_end(input_start, input_end):
+    input_trigger_start_ind = tf.argmax(input_start, axis=2)
+    input_trigger_end_ind = tf.argmax(input_end, axis=2)
+    batch_num = input_trigger_start_ind.shape[0]
+
+    span_max = 10
+    res = []
+    for i in range(batch_num):
+        start_one = input_trigger_start_ind[i]
+        end_one = input_trigger_end_ind[i]
+        for j, x in enumerate(start_one):
+            if x == 0:
+                continue
+            for k, y in enumerate(end_one):
+                if k < j:
+                    continue
+                if k-j > span_max:
+                    continue
+                if x == y:
+                    res.append((i, j, k, x.numpy()))
+    return res
 
 
 class UNModel(tf.keras.models.Model):
@@ -196,6 +260,31 @@ class UNModel(tf.keras.models.Model):
         argument_start = self.argument_start(argument_feature)
         argument_end = self.argument_end(argument_feature)
         return event_label, tagger_start, tagger_end, argument_start, argument_end
+
+    def predict(self, input_encoding):
+        x = self.embed(input_encoding)
+        seq = self.lstm(x)
+
+        last_seq = seq[:, -1, :]
+        last_seq = self.drop_out(last_seq, training=True)
+        event_label = self.event_classifier(last_seq)
+
+        trigger_start = self.tagger_start(seq)
+        trigger_end = self.tagger_end(seq)
+        event_res, argument_feature = get_data_loc(trigger_start, trigger_end, seq)
+
+        argument_start = self.argument_start(argument_feature)
+        argument_end = self.argument_end(argument_feature)
+
+        arg_extract = get_start_end(argument_start, argument_end)
+
+        event_info = dict()
+        for i, x in enumerate(event_res):
+            x_id = x[0]
+            event_info.setdefault(x_id, dict())
+
+
+
 
 
 um_model = UNModel()
@@ -241,6 +330,9 @@ for ep in range(epoch):
                                 data["event_argument_start"],
                                 data["event_argument_end"]
                                 )
+        um_model.predict(data["encoding"])
 
         if batch % 10 == 0:
             print("epoch {0} batch {1} loss is {2}".format(ep, batch, loss_value))
+        break
+    break
