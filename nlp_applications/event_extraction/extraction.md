@@ -1,5 +1,6 @@
 # 事件抽取/检测
 
+event extract or event detect
 定义：从文本中抽取事件信息。事件信息包括事件的类别以及事件的一些属性。
 
 事件抽取包含触发词识别，事件分类和事件要素识别。
@@ -11,7 +12,14 @@
 事件抽取方法分为pipeline 和joint 两种模式。
 
 ## 事件抽取相关论文
-1）
+1）pipeline
+- Event Extraction via Dynamic Multi-Pooling Convolutional Neural Networks
+- RBPB: Regularization-based Pattern Balancing Method for Event Extraction
+- DCFEE: A Document-level Chinese Financial Event Extraction System based on Automatically Labeled Training Data
+- A Language-Independent Neural Network for Event Detection
+- Exploiting Argument Information to Improve Event Detection via Supervised Attention Mechanisms
+- Document Embedding Enhanced Event Detection with Hierarchical and Supervised Attention
+- Self-regulation: Employing a Generative Adversarial Network to Improve Event Detection
 
 2）联合抽取
 - JRNN: Joint Event Extraction via Recurrent Neural Networks
@@ -22,6 +30,7 @@
 
 ## 事件抽取的相关难点
 1）一段文本中存在多个事件，如何将事件以及事件的要素进行匹配
+2）文本很长，即如何解决篇章级别的事件抽取任务
 
 
 
