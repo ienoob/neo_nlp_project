@@ -32,12 +32,14 @@ def padding_data(input_batch):
     event_argument_start = []
     event_argument_end = []
     event_label_ids = []
+    eval_event = []
     max_len = 0
     for bd in input_batch:
         encodings.append(bd["encoding"])
         event_labels.append(bd["event_label"])
         max_len = max(max_len, bd["encoding"].shape[0])
         event_label_ids.append(bd["event_label_id"])
+        eval_event.append(bd["trigger_loc"])
 
     for bd in input_batch:
         trigger_start = np.zeros(max_len)
@@ -71,7 +73,8 @@ def padding_data(input_batch):
         "event_argument_start": tf.cast(event_argument_start, dtype=tf.float32),
         "event_argument_end": tf.cast(event_argument_end, dtype=tf.float32),
         "trigger_masks": tf.cast(event_argument_end, dtype=tf.float32),
-        "event_label_ids": event_label_ids
+        "event_label_ids": event_label_ids,
+        "eval_event_trigger": eval_event
     }
 
 
@@ -200,6 +203,9 @@ def get_data_loc(input_trigger_start, input_trigger_end, input_seq):
     e_m = tf.expand_dims(arg_mask, axis=-1)
     mask_arg = arg_feature+e_m
 
+    # 可能会出现提取的事件数量为0的情况，o(╯□╰)o
+    if arg_feature.shape[0] == 0:
+        return event_res, None
     argument_feature = tf.concat([arg_feature, mask_arg], axis=2)
     return event_res, argument_feature
 
@@ -207,13 +213,14 @@ def get_data_loc(input_trigger_start, input_trigger_end, input_seq):
 def get_start_end(input_start, input_end):
     input_trigger_start_ind = tf.argmax(input_start, axis=2)
     input_trigger_end_ind = tf.argmax(input_end, axis=2)
-    batch_num = input_trigger_start_ind.shape[0]
+    inner_batch_num = input_trigger_start_ind.shape[0]
 
     span_max = 10
     res = []
-    for i in range(batch_num):
+    for i in range(inner_batch_num):
         start_one = input_trigger_start_ind[i]
         end_one = input_trigger_end_ind[i]
+        inner_res = []
         for j, x in enumerate(start_one):
             if x == 0:
                 continue
@@ -223,7 +230,8 @@ def get_start_end(input_start, input_end):
                 if k-j > span_max:
                     continue
                 if x == y:
-                    res.append((i, j, k, x.numpy()))
+                    inner_res.append((j, k, x.numpy()))
+        res.append(inner_res)
     return res
 
 
@@ -262,6 +270,7 @@ class UNModel(tf.keras.models.Model):
         return event_label, tagger_start, tagger_end, argument_start, argument_end
 
     def predict(self, input_encoding):
+        inner_batch_num = input_encoding.shape[0]
         x = self.embed(input_encoding)
         seq = self.lstm(x)
 
@@ -269,21 +278,35 @@ class UNModel(tf.keras.models.Model):
         last_seq = self.drop_out(last_seq, training=True)
         event_label = self.event_classifier(last_seq)
 
+
         trigger_start = self.tagger_start(seq)
         trigger_end = self.tagger_end(seq)
         event_res, argument_feature = get_data_loc(trigger_start, trigger_end, seq)
+        if not event_res:
+            return [[] for _ in range(inner_batch_num)]
 
         argument_start = self.argument_start(argument_feature)
         argument_end = self.argument_end(argument_feature)
 
         arg_extract = get_start_end(argument_start, argument_end)
 
-        event_info = dict()
+        batch_event_info = dict()
         for i, x in enumerate(event_res):
-            x_id = x[0]
-            event_info.setdefault(x_id, dict())
+            b_id = x[0]
+            batch_event_info.setdefault(b_id, [])
+            arguments = arg_extract[i]
+            batch_event_info[b_id].append({
+                "event_id": x[3],
+                "event_trigger_start": x[1],
+                "event_trigger_end": x[2],
+                "arguments": arguments
+            })
 
+        res = []
+        for i in range(inner_batch_num):
+            res.append(batch_event_info.get(i, []))
 
+        return res
 
 
 
@@ -317,6 +340,23 @@ def train_step(input_xx, input_yy, input_trigger_mask, input_event_label_ids, in
     return lossv
 
 
+def eval_metric(real_trigger_data, predict_data):
+    event_real_count = 0
+    event_predict_count = 0
+    event_hit_count = 0
+
+    for i, trigger in enumerate(real_trigger_data):
+        real_set = {(a, b, c) for a, b, c in trigger}
+        predict_set = {(x["event_trigger_start"], x["event_trigger_end"], x["event_id"]) for x in predict_data[i]}
+        event_real_count += len(trigger)
+        event_predict_count += len(predict_data[i])
+        event_hit_count += len(real_set & predict_set)
+
+    print(event_hit_count, event_real_count, event_predict_count)
+
+
+
+
 epoch = 100
 
 for ep in range(epoch):
@@ -330,9 +370,10 @@ for ep in range(epoch):
                                 data["event_argument_start"],
                                 data["event_argument_end"]
                                 )
-        um_model.predict(data["encoding"])
+
+
 
         if batch % 10 == 0:
             print("epoch {0} batch {1} loss is {2}".format(ep, batch, loss_value))
-        break
-    break
+            predict_res = um_model.predict(data["encoding"])
+            eval_metric(data["eval_event_trigger"], predict_res)
