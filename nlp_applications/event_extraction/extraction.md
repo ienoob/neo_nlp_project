@@ -5,10 +5,10 @@ event extract or event detect
 
 事件抽取包含触发词识别，事件分类和事件要素识别。
 抽取的东西主要包括：  
-1）事件类型  
-2）触发词  
-3）事件描述
-4）事件的要素（角色（role）和元素（argument））
+1）事件类型  event type
+2）触发词    event trigger
+3）事件描述   event mention
+4）事件的要素（角色（role）和元素（argument or entity mention））
 事件抽取方法分为pipeline 和joint 两种模式。
 
 ## 事件抽取相关论文
@@ -31,6 +31,10 @@ event extract or event detect
 ## 事件抽取的相关难点
 1）一段文本中存在多个事件，如何将事件以及事件的要素进行匹配
 2）文本很长，即如何解决篇章级别的事件抽取任务
+    元素（argument）会很分散，一个事件中的元素会分布到多个句子中
+    多种事件共存。一个文档中存在多个事件
+    
+    
 
 
 
