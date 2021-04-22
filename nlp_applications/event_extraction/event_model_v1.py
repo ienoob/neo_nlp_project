@@ -33,6 +33,7 @@ def padding_data(input_batch):
     event_argument_end = []
     event_label_ids = []
     eval_event = []
+    eval_event_data_batch = []
     max_len = 0
     for bd in input_batch:
         encodings.append(bd["encoding"])
@@ -40,6 +41,7 @@ def padding_data(input_batch):
         max_len = max(max_len, bd["encoding"].shape[0])
         event_label_ids.append(bd["event_label_id"])
         eval_event.append(bd["trigger_loc"])
+        eval_event_data_batch.append(bd["eval_event_data"])
 
     for bd in input_batch:
         trigger_start = np.zeros(max_len)
@@ -95,12 +97,14 @@ def sample_single_doc(input_doc: EventDocument):
     trigger_loc = []
     event_arguments = []
     event_label_id = []
+    eval_event_data = []
     for e in event_list:
         arguments = []
         label_data[e.id] = 1
         trigger_loc.append((e.trigger_start, e.trigger_start+len(e.trigger)-1, e.id))
         for e_a in e.arguments:
             arguments.append((e_a.start, e_a.start+len(e_a.argument)-1, bd_data_loader.argument_role2id[e_a.role]))
+        eval_event_data.append((e.trigger_start, e.trigger_start+len(e.trigger)-1, e.id, arguments))
         event_arguments.append(arguments)
         event_label_id.append(e.id)
 
@@ -109,7 +113,8 @@ def sample_single_doc(input_doc: EventDocument):
         "event_label": tf.cast(label_data, dtype=tf.int64),
         "trigger_loc": trigger_loc,
         "event_arguments": event_arguments,
-        "event_label_id": event_label_id
+        "event_label_id": event_label_id,
+        "eval_event_data": eval_event_data
     }
 
 
@@ -340,21 +345,19 @@ def train_step(input_xx, input_yy, input_trigger_mask, input_event_label_ids, in
     return lossv
 
 
-def eval_metric(real_trigger_data, predict_data):
+def eval_metric(real_data, predict_data):
     event_real_count = 0
     event_predict_count = 0
     event_hit_count = 0
 
-    for i, trigger in enumerate(real_trigger_data):
-        real_set = {(a, b, c) for a, b, c in trigger}
+    for i, trigger in enumerate(real_data):
+        real_set = {(a, b, c) for a, b, c, _ in trigger}
         predict_set = {(x["event_trigger_start"], x["event_trigger_end"], x["event_id"]) for x in predict_data[i]}
         event_real_count += len(trigger)
         event_predict_count += len(predict_data[i])
         event_hit_count += len(real_set & predict_set)
 
     print(event_hit_count, event_real_count, event_predict_count)
-
-
 
 
 epoch = 100
@@ -371,9 +374,7 @@ for ep in range(epoch):
                                 data["event_argument_end"]
                                 )
 
-
-
         if batch % 10 == 0:
             print("epoch {0} batch {1} loss is {2}".format(ep, batch, loss_value))
             predict_res = um_model.predict(data["encoding"])
-            eval_metric(data["eval_event_trigger"], predict_res)
+            eval_metric(data["eval_event_data"], predict_res)
