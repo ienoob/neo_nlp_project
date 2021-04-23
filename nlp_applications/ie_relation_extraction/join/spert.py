@@ -12,7 +12,7 @@
 """
 import numpy as np
 import tensorflow as tf
-from nlp_applications.data_loader import LoaderDuie2Dataset
+from nlp_applications.data_loader import LoaderDuie2Dataset, Document
 
 batch_num = 2
 data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取\\"
@@ -21,111 +21,126 @@ data_loader = LoaderDuie2Dataset(data_path)
 print(len(data_loader.documents))
 
 
-def sample_single_data(doc):
-    pass
+def convict_data(input_batch_data):
+    batch_encodings = []
+    batch_context_mask = []
+    batch_entity_span = []
+    batch_entity_masks = []
+    batch_entity_sizes = []
+    batch_relations = []
+    batch_rel_masks = []
+    batch_entity_views = []
 
-def get_sample_data(batch):
+    max_len = 0
+    for data in input_batch_data:
+        batch_encodings.append(data["encoding"])
+        batch_context_mask.append(data["context_mask"])
+        batch_entity_span.append(data["entity_span"])
+        max_len = max(max_len, len(data["encoding"]))
 
-    data_len = data_loader.data_len
-    batch_size = int(data_len//batch)
+    for data in input_batch_data:
+
+        for entity_mask in data["entity_mask"]:
+            batch_entity_masks.append(entity_mask)
+        for entity_size in data["entity_size"]:
+            batch_entity_sizes.append(entity_size)
+        for relation in data["relation_labels"]:
+            batch_relations.append(relation)
+        for rel_mask in data["relation_masks"]:
+            batch_rel_masks.append(rel_mask)
 
 
-    encodings = []
-    context_masks = []
-    entity_spans = []
-    entity_masks = []
-    entity_size = []
-    relation_entity_spans = []
-    relation_labels = []
-    relation_masks = []
+    return {
+        "encodings": tf.keras.preprocessing.sequence.pad_sequences(batch_encodings, padding="post"),
+        "context_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_context_mask, padding="post"),
+        "entity_spans": batch_entity_span,
+        "entity_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_context_mask, padding="post"),
+        "entity_sizes": batch_entity_sizes,
+        "entity_view": batch_entity_views,
+        "relations": batch_relations,
+        "rel_masks": batch_rel_masks
+    }
 
-    for doc in data_loader.documents:
-        text_ids = doc.text_id
-        text_len = len(text_ids)
 
-        entity_list = doc.entity_list
-        relation_list = doc.relation_list
+def sample_single_data(doc: Document):
+    text_ids = doc.text_id
+    text_len = len(text_ids)
 
-        entity_span = []
-        sub_entity_masks = []
-        sub_entity_size = []
-        entity_loc_set = set()
-        for entity in entity_list:
-            entity_mask = [1 if ind >= entity._start and ind < entity._end else 0 for ind in range(text_len)]
+    entity_list = doc.entity_list
+    relation_list = doc.relation_list
+
+    entity_span = []
+    sub_entity_masks = []
+    sub_entity_size = []
+    entity_loc_set = set()
+    for entity in entity_list:
+        entity_mask = [1 if ind >= entity._start and ind < entity._end else 0 for ind in range(text_len)]
+        sub_entity_masks.append(entity_mask)
+        entity_span.append(entity._id)
+        sub_entity_size.append(entity.size)
+        entity_loc_set.add((entity._start, entity._end))
+
+    for j in range(text_len - 1):
+        for k in range(j + 1, text_len):
+            if (j, k) in entity_loc_set:
+                continue
+            entity_mask = [1 if ind >= j and ind < k else 0 for ind in range(text_len)]
             sub_entity_masks.append(entity_mask)
-            entity_span.append(entity._id)
-            sub_entity_size.append(entity.size)
-            entity_loc_set.add((entity._start, entity._end))
+            entity_span.append(0)
+            sub_entity_size.append(k - j)
 
-        for j in range(text_len-1):
-            for k in range(j+1, text_len):
-                if (j, k) in entity_loc_set:
-                    continue
-                entity_mask = [1 if ind >= j and ind < k else 0 for ind in range(text_len)]
-                sub_entity_masks.append(entity_mask)
-                entity_span.append(0)
-                sub_entity_size.append(k-j)
+    entity_d = dict()
 
-        encodings.append(text_ids)
-        context_masks.append([1 for _ in text_ids])
-        entity_spans.append(entity_span)
-        entity_masks.append(sub_entity_masks)
-        entity_size.append(sub_entity_size)
-        entity_d = dict()
+    relation_entity_data = dict()
+    relation_entity_set = set()
+    for rl in relation_list:
+        relation_entity_data[(rl._relation_sub._id, rl._relation_obj._id)] = rl._id
+        relation_entity_set.add(rl._relation_sub._id)
+        entity_d[rl._relation_sub._id] = rl._relation_sub
+        relation_entity_set.add(rl._relation_obj._id)
+        entity_d[rl._relation_obj._id] = rl._relation_obj
 
-        relation_entity_data = dict()
-        relation_entity_set = set()
-        for rl in relation_list:
-            relation_entity_data[(rl._relation_sub._id, rl._relation_obj._id)] = rl._id
-            relation_entity_set.add(rl._relation_sub._id)
-            entity_d[rl._relation_sub._id] = rl._relation_sub
-            relation_entity_set.add(rl._relation_obj._id)
-            entity_d[rl._relation_obj._id] = rl._relation_obj
+    relation_entity_span = []
+    relation_entity_list = list(relation_entity_set)
+    relation_label = []
+    relation_mask = []
+    for i, ei in enumerate(relation_entity_list):
+        for j, ej in enumerate(relation_entity_list):
+            if i == j:
+                continue
 
-        relation_entity_span = []
-        relation_entity_list = list(relation_entity_set)
-        relation_label = []
-        relation_mask = []
-        for i, ei in enumerate(relation_entity_list):
-            for j, ej in enumerate(relation_entity_list):
-                if i == j:
-                    continue
+            relation_entity_span.append((ei, ej))
+            relation_label.append(relation_entity_data.get((ei, ej), 0))
 
-                relation_entity_span.append((ei, ej))
-                relation_label.append(relation_entity_data.get((ei, ej), 0))
+            sub = entity_d[ei]
+            obj = entity_d[ej]
 
-                sub = entity_d[ei]
-                obj = entity_d[ej]
+            start = sub._end if sub._end > obj._start else obj._end
+            end = obj._start if sub._end > obj._start else sub._start
 
-                start = sub._end if sub._end > obj._start else obj._end
-                end = obj._start if sub._end > obj._start else sub._start
+            relation_maskv = [1 if ind >= start and ind < end else 0 for ind in range(text_len)]
+            relation_mask.append(relation_maskv)
 
-                relation_maskv = [1 if ind >= start and ind < end else 0 for ind in range(text_len)]
-                relation_mask.append(relation_maskv)
+    return {
+        "encoding": text_ids,
+        "context_mask": [1 for _ in text_ids],
+        "entity_span": entity_span,
+        "entity_mask": sub_entity_masks,
+        "entity_size": sub_entity_size,
+        "relation_entity_spans": tf.cast(relation_entity_span, dtype=tf.int64),
+        "relation_labels": tf.cast(relation_label, dtype=tf.int64),
+        "relation_masks": tf.cast(relation_mask, dtype=tf.int64),
+    }
 
-        relation_entity_spans.append(relation_entity_span)
-        relation_labels.append(relation_label)
-        relation_masks.append(relation_mask)
 
-        if len(encodings) == batch:
-            yield {
-                "encoding": tf.cast(encodings, dtype=tf.int64),
-                "context_masks": tf.cast(context_masks, dtype=tf.int64),
-                "entity_spans": tf.cast(entity_spans, dtype=tf.int64),
-                "entity_masks": tf.cast(entity_masks, dtype=tf.int64),
-                "entity_size": tf.cast(entity_size, dtype=tf.int64),
-                "relation_entity_spans": tf.cast(relation_entity_spans, dtype=tf.int64),
-                "relation_labels": tf.cast(relation_labels, dtype=tf.int64),
-                "relation_masks": tf.cast(relation_masks, dtype=tf.int64),
-            }
-            encodings = []
-            context_masks = []
-            entity_spans = []
-            entity_masks = []
-            entity_size = []
-            relation_entity_spans = []
-            relation_labels = []
-            relation_masks = []
+def get_sample_data(input_batch_num):
+
+    batch_data = []
+    for doc in data_loader.documents:
+        batch_data.append(sample_single_data(doc))
+        if len(batch_data)==input_batch_num:
+            yield convict_data(batch_data)
+            batch_data = []
 
 
 char_size = len(data_loader.char2id)
