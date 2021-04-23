@@ -538,10 +538,11 @@ class Event(object):
 
 
 class EventDocument(object):
-    def __init__(self, input_id, input_text, input_text_id):
+    def __init__(self, input_id, input_text, input_text_id, input_title=None):
         self._id = input_id
         self._text = input_text
         self._text_id = input_text_id
+        self._title = input_title
         self._event_list = []
 
     @property
@@ -560,8 +561,13 @@ class EventDocument(object):
     def event_list(self):
         return self._event_list
 
+    @property
+    def title(self):
+        return self._title
+
     def add_event(self, input_event):
         self._event_list.append(input_event)
+
 
 class LoaderBaiduDueeV1(object):
     """
@@ -654,7 +660,7 @@ class LoaderBaiduDueeFin(object):
             if event_type not in self.event2id:
                 self.event2id[event_type] = len(self.event2id)
 
-        train_path = data_path + "\\duee_train.json\\duee_train.json"
+        train_path = data_path + "\\duee_fin_train.json\\duee_fin_train.json"
 
         self.document = []
         self.char2id = {
@@ -676,15 +682,19 @@ class LoaderBaiduDueeFin(object):
                 text_id.append(self.char2id[char])
 
             sub_doc = EventDocument(i, text, text_id)
-            for sub_event in sub_train_data["event_list"]:
+            for sub_event in sub_train_data.get("event_list", []):
                 event_id = self.event2id[sub_event["event_type"]]
                 sub_trigger = sub_event["trigger"]
-                sub_trigger_start_index = sub_event["trigger_start_index"]
+                sub_trigger_start_index = -1
 
                 event = Event(event_id, sub_trigger, sub_trigger_start_index)
 
                 for sub_argument in sub_event["arguments"]:
-                    sub_arg_index = sub_argument["argument_start_index"]
+                    try:
+                        sub_arg_index = text.index(sub_argument["argument"])
+                    except Exception:
+                        print(sub_argument)
+                        continue
                     sub_arg_role = sub_argument["role"]
                     sub_arg_value = sub_argument["argument"]
 
