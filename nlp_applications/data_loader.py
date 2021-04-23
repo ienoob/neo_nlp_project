@@ -646,18 +646,53 @@ class LoaderBaiduDueeFin(object):
         schema_path = data_path + "\\duee_fin_schema\\duee_fin_event_schema.json"
         schema_data = load_json_line_data(schema_path)
 
-        train_path = data_path + "\\duee_fin_sample.json\\duee_fin_sample.json"
+        self.event2id = {
+            "none_event": 0
+        }
+        for schema in schema_data:
+            event_type = schema["event_type"]
+            if event_type not in self.event2id:
+                self.event2id[event_type] = len(self.event2id)
 
+        train_path = data_path + "\\duee_train.json\\duee_train.json"
 
+        self.document = []
+        self.char2id = {
+            "$pad$": 0,
+            "$unk$": 1
+        }
+        self.argument_role2id = {
+            "$unk$": 0
+        }
+        train_data = load_json_line_data(train_path)
+        for i, sub_train_data in enumerate(train_data):
 
+            text = sub_train_data["text"]
+            text_id = []
 
+            for char in text:
+                if char not in self.char2id:
+                    self.char2id[char] = len(self.char2id)
+                text_id.append(self.char2id[char])
 
+            sub_doc = EventDocument(i, text, text_id)
+            for sub_event in sub_train_data["event_list"]:
+                event_id = self.event2id[sub_event["event_type"]]
+                sub_trigger = sub_event["trigger"]
+                sub_trigger_start_index = sub_event["trigger_start_index"]
 
+                event = Event(event_id, sub_trigger, sub_trigger_start_index)
 
+                for sub_argument in sub_event["arguments"]:
+                    sub_arg_index = sub_argument["argument_start_index"]
+                    sub_arg_role = sub_argument["role"]
+                    sub_arg_value = sub_argument["argument"]
 
+                    if sub_arg_role not in self.argument_role2id:
+                        self.argument_role2id[sub_arg_role] = len(self.argument_role2id)
 
-
-
-
-
+                    argument = Argument(sub_arg_value, sub_arg_role, sub_arg_index)
+                    event.add_argument(argument)
+                sub_doc.add_event(event)
+            self.document.append(sub_doc)
 
