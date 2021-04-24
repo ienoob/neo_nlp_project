@@ -9,4 +9,13 @@
     Joint Extraction of Entities and Relations Based on a Novel Decomposition Strategy
 
 """
+import tensorflow as tf
 
+
+class PointerNet(tf.keras.models.Model):
+
+    def __init__(self):
+        super(PointerNet, self).__init__()
+
+    def call(self, inputs, training=None, mask=None):
+        pass
