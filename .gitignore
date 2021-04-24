@@ -140,3 +140,5 @@ cython_debug/
 tempt
 
 .ipynb_checkpoints
+
+.idea/*
