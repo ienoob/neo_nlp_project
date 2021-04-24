@@ -29,34 +29,39 @@ def convict_data(input_batch_data):
     batch_entity_sizes = []
     batch_relations = []
     batch_rel_masks = []
-    batch_entity_views = []
+    batch_entity_num = []
+    batch_relation_num = []
 
     max_len = 0
     for data in input_batch_data:
         batch_encodings.append(data["encoding"])
         batch_context_mask.append(data["context_mask"])
         batch_entity_span.append(data["entity_span"])
+
+        batch_entity_num.append(len(data["entity_span"]))
+        batch_relation_num.append(len(data["relation_labels"]))
         max_len = max(max_len, len(data["encoding"]))
+
 
     for data in input_batch_data:
 
         for entity_mask in data["entity_mask"]:
             batch_entity_masks.append(entity_mask)
-        for entity_size in data["entity_size"]:
-            batch_entity_sizes.append(entity_size)
         for relation in data["relation_labels"]:
             batch_relations.append(relation)
         for rel_mask in data["relation_masks"]:
             batch_rel_masks.append(rel_mask)
+        for entity_size in data["entity_size"]:
+            batch_entity_sizes.append(entity_size)
 
 
     return {
         "encodings": tf.keras.preprocessing.sequence.pad_sequences(batch_encodings, padding="post"),
         "context_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_context_mask, padding="post"),
         "entity_spans": batch_entity_span,
-        "entity_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_context_mask, padding="post"),
-        "entity_sizes": batch_entity_sizes,
-        "entity_view": batch_entity_views,
+        "entity_masks": batch_entity_masks,
+        "entity_sizes": tf.cast(batch_entity_sizes, dtype=tf.int64),
+        "entity_num": batch_entity_num,
         "relations": batch_relations,
         "rel_masks": batch_rel_masks
     }
@@ -109,7 +114,7 @@ def sample_single_data(doc: Document):
             if i == j:
                 continue
 
-            relation_entity_span.append((ei, ej))
+            relation_entity_span.append((entity_span.index(ei), entity_span.index(ej)))
             relation_label.append(relation_entity_data.get((ei, ej), 0))
 
             sub = entity_d[ei]
@@ -187,6 +192,46 @@ def batch_index(first_list, index_list):
     return tf.cast(new_data, dtype=tf.float32)
 
 
+def build_entity_feature(input_embed, entity_mask, input_size):
+    inner_batch_num = input_embed.shape[0]
+
+    entity_feature = []
+    for i in range(inner_batch_num):
+        for v in range(input_size[i]):
+            entity_feature.append(input_embed[i])
+    entity_feature = tf.cast(entity_feature, dtype=tf.float32)
+    m = tf.cast(tf.expand_dims(entity_mask, -1) == 0, tf.float32) * (-1e30)
+    entity_spans_pool = m + entity_feature
+    entity_spans_pool = tf.reduce_max(entity_spans_pool, axis=1)
+
+    return entity_spans_pool
+
+def build_relation_feature(input_embed, entity_spans_pool, input_relation_pair,
+                           size_embeddings, rel_mask, input_num):
+    inner_batch_num = input_embed.shape[0]
+
+    relation_embed_feature = []
+    relation_entity_feature = []
+    relation_size_feature = []
+    for i in range(inner_batch_num):
+        for v in range(input_num[i]):
+            relation_embed_feature.append(input_embed[i])
+            s, o = input_relation_pair[i][v]
+            relation_entity_feature.append(tf.concat([entity_spans_pool[i*inner_batch_num+s], entity_spans_pool[i*inner_batch_num+0]]))
+            relation_size_feature.append(tf.concat([size_embeddings[i*inner_batch_num+s], size_embeddings[i*inner_batch_num+0]]))
+    relation_embed_feature = tf.cast(relation_embed_feature, dtype=tf.float32)
+    m = tf.cast(tf.expand_dims(rel_mask, -1) == 0, tf.float32) * (-1e30)
+    relation_spans_pool = m + relation_embed_feature
+    relation_embed = tf.reduce_max(relation_spans_pool, axis=1)
+    relation_entity_feature = tf.cast(relation_entity_feature, dtype=tf.float32)
+    relation_size_feature = tf.cast(relation_size_feature, dtype=tf.float32)
+
+    relation_feature = tf.concat([relation_embed, relation_entity_feature, relation_size_feature], axis=1)
+
+    return relation_feature
+
+
+
 class SpERt(tf.keras.models.Model):
 
     def __init__(self, relation_types, entity_types, max_pairs):
@@ -204,38 +249,21 @@ class SpERt(tf.keras.models.Model):
         self._entity_types = entity_types
         self._max_pairs = max_pairs
 
-    def call(self, encodings, context_masks, entity_masks, entity_sizes, relations, rel_masks,  training=None, mask=None):
+    def call(self, encodings, context_masks, entity_masks, entity_sizes, entity_nums, relations, rel_masks,  relation_nums,
+             training=None, mask=None):
         # z这里用普通embed替代bert, 这是为了正常运行，毕竟╮(╯▽╰)╭内存太小了
         h = self.embed(encodings)
 
-        batch_size = encodings.shape[0]
         size_embeddings = self.size_embed(entity_sizes)
-        entity_clf, entity_spans_pool = self._classify_entities(h, entity_masks, size_embeddings)
-
-        h_expand = tf.expand_dims(h, axis=1)
-        h_large = tf.repeat(h_expand, repeats=max(min(relations.shape[1], self._max_pairs), 1), axis=1)
-        # rel_clf = tf.zeros([batch_size, relations.shape[1], self._relation_types])
-        rel_clf = self._classify_relations(entity_spans_pool, size_embeddings,
-                                           relations, rel_masks, h_large, 0)
-        # for i in range(0, relations.shape[1], self._max_pairs):
-            # classify relation candidates
-            # rel_clf = self._classify_relations(entity_spans_pool, size_embeddings,
-            #                                             relations, rel_masks, h_large, i)
-            # rel_clf[:, i:i + self._max_pairs, :] = chunk_rel_logits
-        return entity_clf, rel_clf
-
-
-    def _classify_entities(self, input_embed, input_entity_masks: tf.Tensor, input_size_embed: tf.Tensor):
-        m = tf.cast(tf.expand_dims(input_entity_masks, -1)==0, tf.float32)*(-1e30)
-        entity_spans_pool = m+tf.repeat(tf.expand_dims(input_embed, 1), repeats=input_entity_masks.shape[1], axis=1)
-        entity_spans_pool = tf.reduce_max(entity_spans_pool, axis=2)
-
-        # entity_ctx = get_token(input_embed, input_encodings)
-        entity_repr = tf.concat([entity_spans_pool, input_size_embed], axis=2)
+        entity_spans_pool = build_entity_feature(h, entity_masks, entity_nums)
+        entity_repr = tf.concat([entity_spans_pool, size_embeddings], axis=1)
         entity_repr = self.dropout(entity_repr)
         entity_clf = self.entity_classifier(entity_repr)
 
-        return entity_clf, entity_spans_pool
+        relation_feature = build_relation_feature(h, entity_spans_pool, relations, size_embeddings, rel_masks, relation_nums)
+        rel_clf = self.rel_classifier(relation_feature)
+
+        return entity_clf, rel_clf
 
     def _classify_relations(self, entity_spans_pool, size_embeddings, relations, rel_masks, h_large, input_i):
         batch_size = entity_spans_pool.shape[0]
