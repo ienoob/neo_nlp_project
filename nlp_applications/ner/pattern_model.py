@@ -10,6 +10,7 @@
 """
     这个方法名为模板方法，但是模板是从数据中来，和人工指定模板的思路不同
 """
+import re
 import json
 from nlp_applications.data_loader import load_json_line_data
 
@@ -80,7 +81,18 @@ class PatternModel(object):
             self.pattern_list.append(pattern)
 
     def predict(self, input_text):
-        pass
+        predict_res = []
+        for text in input_text:
+            extract = []
+            for pt in self.pattern_list:
+                g = re.search(pt, text)
+                if g:
+                    extract.append((g.start(1),g.group(1)))
+                    break
+            predict_res.append(extract)
+
+        return predict_res
+
 
 
 test_train = sample_data("灾害/意外-爆炸", "时间")
@@ -89,3 +101,6 @@ test_train_label = [(d[1],d[2]) for d in test_train]
 
 pt = PatternModel()
 pt.fit(test_train_feature, test_train_label)
+pres = pt.predict(test_train_feature)
+print(test_train_label)
+print(pres)
