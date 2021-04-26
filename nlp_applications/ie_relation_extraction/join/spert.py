@@ -15,6 +15,8 @@ import tensorflow as tf
 from nlp_applications.data_loader import LoaderDuie2Dataset, Document
 
 batch_num = 2
+max_len = 100
+
 data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取\\"
 data_loader = LoaderDuie2Dataset(data_path)
 
@@ -31,6 +33,7 @@ def convict_data(input_batch_data):
     batch_rel_masks = []
     batch_entity_num = []
     batch_relation_num = []
+    batch_relation_entity = []
 
     max_len = 0
     for data in input_batch_data:
@@ -40,6 +43,7 @@ def convict_data(input_batch_data):
 
         batch_entity_num.append(len(data["entity_span"]))
         batch_relation_num.append(len(data["relation_labels"]))
+        batch_relation_entity.append(data["relation_entity_spans"])
         max_len = max(max_len, len(data["encoding"]))
 
 
@@ -59,11 +63,13 @@ def convict_data(input_batch_data):
         "encodings": tf.keras.preprocessing.sequence.pad_sequences(batch_encodings, padding="post"),
         "context_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_context_mask, padding="post"),
         "entity_spans": batch_entity_span,
-        "entity_masks": batch_entity_masks,
+        "entity_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_entity_masks, padding="post"),
         "entity_sizes": tf.cast(batch_entity_sizes, dtype=tf.int64),
         "entity_num": batch_entity_num,
         "relations": batch_relations,
-        "rel_masks": batch_rel_masks
+        "rel_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_rel_masks, padding="post"),
+        "relation_entity": batch_relation_entity,
+        "relation_num": batch_relation_num
     }
 
 
@@ -88,6 +94,8 @@ def sample_single_data(doc: Document):
     for j in range(text_len - 1):
         for k in range(j + 1, text_len):
             if (j, k) in entity_loc_set:
+                continue
+            if k-j > max_len:
                 continue
             entity_mask = [1 if ind >= j and ind < k else 0 for ind in range(text_len)]
             sub_entity_masks.append(entity_mask)
@@ -132,7 +140,7 @@ def sample_single_data(doc: Document):
         "entity_span": entity_span,
         "entity_mask": sub_entity_masks,
         "entity_size": sub_entity_size,
-        "relation_entity_spans": tf.cast(relation_entity_span, dtype=tf.int64),
+        "relation_entity_spans": relation_entity_span,
         "relation_labels": tf.cast(relation_label, dtype=tf.int64),
         "relation_masks": tf.cast(relation_mask, dtype=tf.int64),
     }
@@ -149,18 +157,13 @@ def get_sample_data(input_batch_num):
 
 
 char_size = len(data_loader.char2id)
+size_value = 256
 embed_size = 64
 hidden_size = 64
 size_embed_size = 64
 relation_type = len(data_loader.relation2id)
 entity_type = len(data_loader.entity2id)
 
-
-data_batch = get_sample_data(batch_num)
-
-for dt in data_batch:
-    print(dt)
-    break
 
 
 def get_token(h, x, token):
@@ -238,7 +241,7 @@ class SpERt(tf.keras.models.Model):
         super(SpERt, self).__init__()
 
         self.embed = tf.keras.layers.Embedding(char_size, embed_size)
-        self.size_embed = tf.keras.layers.Embedding(100, size_embed_size)
+        self.size_embed = tf.keras.layers.Embedding(size_value, size_embed_size)
         self.rel_classifier = tf.keras.layers.Dense(relation_type)
         self.entity_classifier = tf.keras.layers.Dense(entity_type)
         self.dropout = tf.keras.layers.Dropout(0.5)
@@ -265,30 +268,6 @@ class SpERt(tf.keras.models.Model):
 
         return entity_clf, rel_clf
 
-    def _classify_relations(self, entity_spans_pool, size_embeddings, relations, rel_masks, h_large, input_i):
-        batch_size = entity_spans_pool.shape[0]
-
-        if relations.shape[1] > self._max_pairs:
-            relations = relations[:, input_i:input_i+self._max_pairs, :]
-            rel_masks = rel_masks[:, input_i:input_i+self._max_pairs, :]
-
-        entity_pair = batch_index(entity_spans_pool, relations)
-        entity_pair = tf.reshape(entity_pair, (batch_size, entity_pair.shape[1], -1))
-
-        entity_size = batch_index(size_embeddings, relations)
-        entity_size = tf.reshape(entity_size, (batch_size, entity_size.shape[1], -1))
-
-        m = tf.cast(tf.expand_dims(rel_masks, -1)==0, tf.float32)*(-1e30)
-        hm = m + h_large
-        hm = tf.reduce_max(hm,axis=2)
-
-        relation_repr = tf.concat([entity_pair, entity_size, hm], axis=2)
-        relation_repr = self.rel_dropout(relation_repr)
-
-        relation_clf = self.rel_classifier(relation_repr)
-
-        return relation_clf
-
 
     def predict(self):
         pass
@@ -304,20 +283,32 @@ sample_entity_sizes = tf.constant([[2, 3, 2]])
 sample_relation = tf.constant([[[0, 1]]])
 sample_relation_mask = tf.constant([[1, 1]])
 
-sample_entity_res, sample_relation_res = spert(sample_encoding, sample_mask, sample_entity_mask, sample_entity_sizes, sample_relation, sample_relation_mask)
+# sample_entity_res, sample_relation_res = spert(sample_encoding, sample_mask, sample_entity_mask, sample_entity_sizes, sample_relation, sample_relation_mask)
 
 
-print(sample_entity_res.shape)
-print(sample_relation_res.shape)
+# print(sample_entity_res.shape)
+# print(sample_relation_res.shape)
 
 sample_entity_label = tf.constant([[1, 2, 3]])
 sample_relation_label = tf.constant(([[1]]))
 
 loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-print(loss(sample_entity_label, sample_entity_res))
-print(loss(sample_relation_label, sample_relation_res))
+# print(loss(sample_entity_label, sample_entity_res))
+# print(loss(sample_relation_label, sample_relation_res))
 
 
+batch_data_iter = get_sample_data(batch_num)
+for batch_data in batch_data_iter:
+    clf, relation = spert(batch_data["encodings"],
+                          batch_data["context_masks"],
+                          batch_data["entity_masks"],
+                          batch_data["entity_sizes"],
+                          batch_data["entity_num"],
+                          batch_data["relation_entity"],
+                          batch_data["rel_masks"],
+                          batch_data["relation_num"])
+    # print(batch_data)
+    break
 
 
 
