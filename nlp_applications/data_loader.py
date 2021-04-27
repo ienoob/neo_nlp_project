@@ -538,11 +538,12 @@ class Event(object):
 
 
 class EventDocument(object):
-    def __init__(self, input_id, input_text, input_text_id, input_title=None):
+    def __init__(self, input_id, input_text, input_text_id, input_title=None, input_title_id=None):
         self._id = input_id
         self._text = input_text
         self._text_id = input_text_id
         self._title = input_title
+        self._sentence = []
         self._event_list = []
 
     @property
@@ -659,6 +660,7 @@ class LoaderBaiduDueeFin(object):
             event_type = schema["event_type"]
             if event_type not in self.event2id:
                 self.event2id[event_type] = len(self.event2id)
+        self.id2event = {v:k for k,v in self.event2id.items()}
 
         train_path = data_path + "\\duee_fin_train.json\\duee_fin_train.json"
 
@@ -674,14 +676,23 @@ class LoaderBaiduDueeFin(object):
         for i, sub_train_data in enumerate(train_data):
 
             text = sub_train_data["text"]
+            title = sub_train_data["title"]
             text_id = []
+            title_id = []
+
+            split_char = ["."]
 
             for char in text:
                 if char not in self.char2id:
                     self.char2id[char] = len(self.char2id)
                 text_id.append(self.char2id[char])
 
-            sub_doc = EventDocument(i, text, text_id)
+            for char in title:
+                if char not in self.char2id:
+                    self.char2id[char] = len(self.char2id)
+                title_id.append(self.char2id[char])
+
+            sub_doc = EventDocument(i, text, text_id, title, title_id)
             for sub_event in sub_train_data.get("event_list", []):
                 event_id = self.event2id[sub_event["event_type"]]
                 sub_trigger = sub_event["trigger"]
@@ -690,11 +701,12 @@ class LoaderBaiduDueeFin(object):
                 event = Event(event_id, sub_trigger, sub_trigger_start_index)
 
                 for sub_argument in sub_event["arguments"]:
-                    try:
-                        sub_arg_index = text.index(sub_argument["argument"])
-                    except Exception:
-                        print(sub_argument)
-                        continue
+                    # try:
+                    #     sub_arg_index = text.index(sub_argument["argument"])
+                    # except Exception:
+                    #     print(sub_argument)
+                    #     continue
+                    sub_arg_index = -1
                     sub_arg_role = sub_argument["role"]
                     sub_arg_value = sub_argument["argument"]
 
