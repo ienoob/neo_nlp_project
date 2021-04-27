@@ -143,6 +143,7 @@ def train_step(left_word, right_word, mid_word, left_pos_1, left_pos_2, right_po
 # dataset = None
 #
 
+
 EPOCH = 100
 for e in range(EPOCH):
 
