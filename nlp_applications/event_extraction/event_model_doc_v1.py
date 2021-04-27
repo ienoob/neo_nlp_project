@@ -12,6 +12,119 @@ from nlp_applications.data_loader import LoaderBaiduDueeFin, EventDocument, Even
 
 sample_path = "D:\\data\\篇章级事件抽取\\"
 bd_data_loader = LoaderBaiduDueeFin(sample_path)
+max_len = 256
+print(bd_data_loader.event2id)
+print(bd_data_loader.argument_role2id)
 
 for doc in bd_data_loader.document:
-    print(doc)
+    print(doc.title, len(doc.event_list))
+    # if len(doc.event_list)==3:
+    #     print(doc.text)
+    #     for event in doc.event_list:
+    #         print(bd_data_loader.id2event[event.id])
+    #         for arg in event.arguments:
+    #             print(arg.argument, arg.role)
+
+
+def cut_sentence(input_sentence):
+    innser_sentence_list = []
+    cut_char = {"，"}
+    indx = 0
+
+    while indx<len(input_sentence):
+
+        last_ind = indx+max_len
+        while last_ind > indx:
+            if input_sentence[last_ind-1] in cut_char:
+                break
+            last_ind -= 1
+
+        pre_cut = input_sentence[indx:last_ind]
+        innser_sentence_list.append(pre_cut)
+        indx = last_ind
+
+    return innser_sentence_list
+
+
+
+
+class DataIter(object):
+
+    def __init__(self, input_loader, input_batch_num):
+        self.input_loader = input_loader
+        self.input_batch_num = input_batch_num
+        self.max_len = 0
+
+    def _transformer2feature(self, input_doc: EventDocument):
+        text = input_doc.text
+        title = input_doc.title
+        sentences = [title]
+        sentences_id = []
+        split_char = {"。", "\n"}
+        sentence = ""
+        for char in text:
+            if char in split_char:
+                sentence += char
+                sentence = sentence.strip()
+                if len(sentence) > max_len:
+                    tiny_sentence_list = cut_sentence(sentence)
+                    sentences += tiny_sentence_list
+                else:
+                    sentences.append(sentence)
+                sentence = ""
+            else:
+                sentence += char
+        if sentence.strip():
+            sentences.append(sentence.strip())
+
+        for sentence in sentences:
+            sentence_id = [self.input_loader.char2id[char] for char in sentence]
+
+            self.max_len = max(self.max_len, len(sentence_id))
+            sentences_id.append(sentence_id)
+
+        return {
+            "sentences_id": sentences_id
+        }
+
+    def batch_transformer(self, input_batch_data):
+        batch_sentences_id = []
+        for data in input_batch_data:
+            batch_sentences_id.append(data["sentences_id"])
+
+        return {
+            "sentences_id": batch_sentences_id
+        }
+
+    def __iter__(self):
+        inner_batch_data = []
+        for doc in self.input_loader.document:
+            tf_data = self._transformer2feature(doc)
+            inner_batch_data.append(tf_data)
+            if len(inner_batch_data) == self.input_batch_num:
+                yield self.batch_transformer(inner_batch_data)
+                inner_batch_data = []
+
+
+
+data_iter = DataIter(bd_data_loader, 2)
+
+for batch_data in data_iter:
+    pass
+
+print(data_iter.max_len)
+
+vocab_size = 64
+embed_size = 64
+
+class EventModelDocV1(tf.keras.Model):
+
+
+    def __init__(self):
+        super(EventModelDocV1, self).__init__()
+        self.embed = tf.keras.layers.Embedding(vocab_size, embed_size)
+
+
+
+    def call(self, inputs, training=None, mask=None):
+        pass
