@@ -15,12 +15,14 @@ import tensorflow as tf
 from nlp_applications.data_loader import LoaderDuie2Dataset, Document
 
 batch_num = 2
-max_len = 100
+entity_max_len = 50
+random_choice_num = 100
 
 data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取\\"
 data_loader = LoaderDuie2Dataset(data_path)
 
 print(len(data_loader.documents))
+print(data_loader.entity_max_len)
 
 
 def convict_data(input_batch_data):
@@ -39,7 +41,6 @@ def convict_data(input_batch_data):
     for data in input_batch_data:
         batch_encodings.append(data["encoding"])
         batch_context_mask.append(data["context_mask"])
-        batch_entity_span.append(data["entity_span"])
 
         batch_entity_num.append(len(data["entity_span"]))
         batch_relation_num.append(len(data["relation_labels"]))
@@ -58,15 +59,18 @@ def convict_data(input_batch_data):
         for entity_size in data["entity_size"]:
             batch_entity_sizes.append(entity_size)
 
+        for entity_s in data["entity_span"]:
+            batch_entity_span.append(entity_s)
+
 
     return {
         "encodings": tf.keras.preprocessing.sequence.pad_sequences(batch_encodings, padding="post"),
         "context_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_context_mask, padding="post"),
-        "entity_spans": batch_entity_span,
+        "entity_spans": tf.cast(batch_entity_span, dtype=tf.int64),
         "entity_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_entity_masks, padding="post"),
         "entity_sizes": tf.cast(batch_entity_sizes, dtype=tf.int64),
         "entity_num": batch_entity_num,
-        "relations": batch_relations,
+        "relations": tf.cast(batch_relations, dtype=tf.int64),
         "rel_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_rel_masks, padding="post"),
         "relation_entity": batch_relation_entity,
         "relation_num": batch_relation_num
@@ -81,37 +85,50 @@ def sample_single_data(doc: Document):
     relation_list = doc.relation_list
 
     entity_span = []
+    entity_span_list = []
     sub_entity_masks = []
     sub_entity_size = []
     entity_loc_set = set()
     for entity in entity_list:
-        entity_mask = [1 if ind >= entity._start and ind < entity._end else 0 for ind in range(text_len)]
+        entity_mask = [1 if ind >= entity.start and ind < entity.end else 0 for ind in range(text_len)]
         sub_entity_masks.append(entity_mask)
-        entity_span.append(entity._id)
+        entity_span.append(entity.id)
+        entity_span_list.append(entity)
         sub_entity_size.append(entity.size)
-        entity_loc_set.add((entity._start, entity._end))
+        entity_loc_set.add((entity.start, entity.end))
 
+    negative_entity_data = []
     for j in range(text_len - 1):
         for k in range(j + 1, text_len):
             if (j, k) in entity_loc_set:
                 continue
-            if k-j > max_len:
+            if k-j > entity_max_len:
                 continue
             entity_mask = [1 if ind >= j and ind < k else 0 for ind in range(text_len)]
-            sub_entity_masks.append(entity_mask)
-            entity_span.append(0)
-            sub_entity_size.append(k - j)
+            negative_entity_data.append((entity_mask, 0, k - j))
+            # sub_entity_masks.append(entity_mask)
+            # entity_span.append(0)
+            # sub_entity_size.append(k - j)
+
+    entity_num = len(negative_entity_data)
+    if entity_num > random_choice_num:
+        random_inx = np.random.choice(entity_num, random_choice_num)
+        negative_entity_data = [negative_entity_data[ind] for ind in random_inx]
+    for entity_mask, e_id, e_size in negative_entity_data:
+        sub_entity_masks.append(entity_mask)
+        entity_span.append(e_id)
+        sub_entity_size.append(e_size)
 
     entity_d = dict()
 
     relation_entity_data = dict()
     relation_entity_set = set()
     for rl in relation_list:
-        relation_entity_data[(rl._relation_sub._id, rl._relation_obj._id)] = rl._id
-        relation_entity_set.add(rl._relation_sub._id)
-        entity_d[rl._relation_sub._id] = rl._relation_sub
-        relation_entity_set.add(rl._relation_obj._id)
-        entity_d[rl._relation_obj._id] = rl._relation_obj
+        relation_entity_data[(rl.sub, rl.obj)] = rl.id
+        relation_entity_set.add(rl.sub)
+        entity_d[rl.sub.id] = rl.sub
+        relation_entity_set.add(rl.obj)
+        entity_d[rl.obj.id] = rl.obj
 
     relation_entity_span = []
     relation_entity_list = list(relation_entity_set)
@@ -122,11 +139,11 @@ def sample_single_data(doc: Document):
             if i == j:
                 continue
 
-            relation_entity_span.append((entity_span.index(ei), entity_span.index(ej)))
+            relation_entity_span.append((entity_span_list.index(ei), entity_span_list.index(ej)))
             relation_label.append(relation_entity_data.get((ei, ej), 0))
 
-            sub = entity_d[ei]
-            obj = entity_d[ej]
+            sub = ei
+            obj = ej
 
             start = sub._end if sub._end > obj._start else obj._end
             end = obj._start if sub._end > obj._start else sub._start
@@ -220,8 +237,8 @@ def build_relation_feature(input_embed, entity_spans_pool, input_relation_pair,
         for v in range(input_num[i]):
             relation_embed_feature.append(input_embed[i])
             s, o = input_relation_pair[i][v]
-            relation_entity_feature.append(tf.concat([entity_spans_pool[i*inner_batch_num+s], entity_spans_pool[i*inner_batch_num+0]]))
-            relation_size_feature.append(tf.concat([size_embeddings[i*inner_batch_num+s], size_embeddings[i*inner_batch_num+0]]))
+            relation_entity_feature.append(tf.concat([entity_spans_pool[i*inner_batch_num+s], entity_spans_pool[i*inner_batch_num+0]], axis=0))
+            relation_size_feature.append(tf.concat([size_embeddings[i*inner_batch_num+s], size_embeddings[i*inner_batch_num+0]], axis=0))
     relation_embed_feature = tf.cast(relation_embed_feature, dtype=tf.float32)
     m = tf.cast(tf.expand_dims(rel_mask, -1) == 0, tf.float32) * (-1e30)
     relation_spans_pool = m + relation_embed_feature
@@ -293,22 +310,50 @@ sample_entity_label = tf.constant([[1, 2, 3]])
 sample_relation_label = tf.constant(([[1]]))
 
 loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+optimizer = tf.keras.optimizers.Adam()
 # print(loss(sample_entity_label, sample_entity_res))
 # print(loss(sample_relation_label, sample_relation_res))
 
 
-batch_data_iter = get_sample_data(batch_num)
-for batch_data in batch_data_iter:
-    clf, relation = spert(batch_data["encodings"],
-                          batch_data["context_masks"],
-                          batch_data["entity_masks"],
-                          batch_data["entity_sizes"],
-                          batch_data["entity_num"],
-                          batch_data["relation_entity"],
-                          batch_data["rel_masks"],
-                          batch_data["relation_num"])
-    # print(batch_data)
-    break
+@tf.function()
+def train_step(encodings, context_masks, entity_masks, entity_sizes, entity_num, relation_entity, rel_masks, relation_num, entity_spans, relations):
+
+    with tf.GradientTape() as tape:
+        clf_logits, relation_logits = spert(encodings,
+                          context_masks,
+                          entity_masks,
+                          entity_sizes,
+                          entity_num,
+                          relation_entity,
+                          rel_masks,
+                          relation_num)
+        loss_f = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        loss_v = loss_f(entity_spans, clf_logits) + loss_f(relations, relation_logits)
+
+    variables = spert.variables
+    gradients = tape.gradient(loss_v, variables)
+    optimizer.apply_gradients(zip(gradients, variables))
+
+    return loss_v
+
+epoch = 100
+for e in range(epoch):
+    batch_data_iter = get_sample_data(batch_num)
+    for i, batch_data in enumerate(batch_data_iter):
+        lossv = train_step(batch_data["encodings"],
+                           batch_data["context_masks"],
+                           batch_data["entity_masks"],
+                           batch_data["entity_sizes"],
+                           batch_data["entity_num"],
+                           batch_data["relation_entity"],
+                           batch_data["rel_masks"],
+                           batch_data["relation_num"],
+                           batch_data["entity_spans"],
+                           batch_data["relations"])
+
+        if i % 100 == 0:
+            print("epoch {0} batch {1} loss value is {2}".format(e, i, lossv))
+
 
 
 
