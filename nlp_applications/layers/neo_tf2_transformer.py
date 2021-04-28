@@ -63,14 +63,12 @@ class MultiHeader(tf.keras.layers.Layer):
 
         self.feed_forward = tf.keras.layers.Dense(embed_size)
 
+    def call(self, input_q, input_k, input_v, **kwargs):
 
-
-    def call(self, input_s, **kwargs):
-
-        batch = input_s.shape[0]
-        q = self.q(input_s)
-        k = self.k(input_s)
-        v = self.v(input_s)
+        batch = input_q.shape[0]
+        q = self.q(input_q)
+        k = self.k(input_k)
+        v = self.v(input_v)
 
         q = tf.reshape(q, (batch, -1, self.head_num, self.sub_len))
         k = tf.reshape(k, (batch, -1, self.head_num, self.sub_len))
@@ -85,10 +83,23 @@ class MultiHeader(tf.keras.layers.Layer):
 
         return attention_value_rs
 
+
 class TransformerEncoder(tf.keras.layers.Layer):
 
-    def __init__(self):
+    def __init__(self, seq_num, header_num=8):
         super(TransformerEncoder, self).__init__()
 
+        self.self_attention_layer = MultiHeader(head_num=header_num, input_length=seq_num)
+        self.normal_layer1 = tf.keras.layers.LayerNormalization()
+        self.feedward = tf.keras.layers.Dense(embed_size)
+        self.normal_layer2 = tf.keras.layers.LayerNormalization()
 
+    def call(self, inputs, **kwargs):
+        inputs_attention = self.self_attention_layer(inputs)
+        inputs_value = inputs+inputs_attention
+        inputs_value = self.normal_layer1(inputs_value)
+        inputs_value_feed = self.feedward(inputs_value)
+        inputs_value = inputs_value+inputs_value_feed
+        inputs_value = self.normal_layer2(inputs_value)
 
+        return inputs_value
