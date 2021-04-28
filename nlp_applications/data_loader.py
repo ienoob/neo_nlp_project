@@ -429,7 +429,7 @@ class LoaderDuie2Dataset(object):
     """
     def __init__(self, data_path):
         self.schema_path = data_path + "//duie_schema//duie_schema.json"
-        self.train_path = data_path + "//duie_sample.json//duie_sample.json"
+        self.train_path = data_path + "//duie_train.json//duie_train.json"
 
         schema_data_list = load_json_line_data(self.schema_path)
         train_data_list = load_json_line_data(self.train_path)
