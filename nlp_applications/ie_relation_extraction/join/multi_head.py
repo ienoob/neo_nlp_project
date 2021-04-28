@@ -17,6 +17,7 @@ char_embed = 10
 word_embed = 10
 
 
+
 class MultiHeaderModel(tf.keras.Model):
 
     def __init__(self):

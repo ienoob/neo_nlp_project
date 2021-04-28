@@ -125,6 +125,7 @@ print(data_iter.max_len)
 vocab_size = 64
 embed_size = 64
 
+
 class EventModelDocV1(tf.keras.Model):
 
 
