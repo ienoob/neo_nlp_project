@@ -12,18 +12,25 @@
 """
 import re
 import json
+import numpy as np
 from nlp_applications.data_loader import load_json_line_data
+from nlp_applications.utils import load_word_vector
+from sklearn.linear_model import LinearRegression
 
 schema_path = "D:\data\句子级事件抽取\duee_schema\\duee_event_schema.json"
 data_path = "D:\data\句子级事件抽取\duee_train.json\\duee_train.json"
 eval_data_path = "D:\data\句子级事件抽取\duee_dev.json\\duee_dev.json"
-
+word_embed_path = "D:\\data\\word2vec\\sgns.weibo.char\\sgns.weibo.char"
 
 schema_data = load_json_line_data(schema_path)
 train_data = load_json_line_data(data_path)
 eval_data = load_json_line_data(eval_data_path)
 
+
 train_data = list(train_data)
+eval_data = list(eval_data)
+
+word_embed = load_word_vector(word_embed_path)
 
 # for schema in schema_data:
 #     print(schema)
@@ -88,14 +95,14 @@ def soft_score_res(real_data, predict_data):
     return matrix
 
 
-def sample_data(event_type, event_role):
+def sample_data(input_event_type, input_event_role, data_source):
     data_list = []
-    for data in train_data:
+    for data in data_source:
         for event in data["event_list"]:
-            if event["event_type"] != event_type:
+            if event["event_type"] != input_event_type:
                 continue
             for arg in event["arguments"]:
-                if arg["role"] != event_role:
+                if arg["role"] != input_event_role:
                     continue
                 data_list.append((data["text"], arg["argument_start_index"], arg["argument"]))
 
@@ -144,8 +151,8 @@ print(max_sub_sequence("abc", "yagbghachje"))
 
 
 
-
 charater_list = [".", "+"]
+
 
 
 def single_pattern(input_str):
@@ -169,9 +176,23 @@ class PatternModel(object):
         self.pattern_list = []
         self.core_list = []
         self.core_pattern = []
+        self.clf = LinearRegression()
+
+    def negative_choice(self, input_text, positive_span=list()):
+        dlen = len(input_text)
+        while True:
+            i = np.random.randint(0, dlen)
+            j = np.random.randint(0, dlen)
+            s = min(i, j)
+            e = max(i, j)
+            if input_text[s:e+1] in positive_span:
+                continue
+            return input_text[s:e+1]
+
 
     def fit(self, input_feature_data, label_datas):
         pattern_statis = dict()
+        negative_span = []
         for i, text in enumerate(input_feature_data):
             label_data = label_datas[i]
             start_indx = label_data[0]
@@ -179,6 +200,7 @@ class PatternModel(object):
             start_context = text[:start_indx]
             core_data = label_data[1]
             self.core_list.append(core_data)
+            negative_span.append(self.negative_choice(text, [core_data]))
             end_context = text[end_indx:]
 
             start_p = start_context[-1] if len(start_context) else "$"
@@ -211,6 +233,7 @@ class PatternModel(object):
 
         for p1, p2, _ in (pattern_list_value):
             pattern = r"{0}(.+?)[{1}]".format(p1, "".join(p2))
+            print(pattern)
             self.pattern_list.append(pattern)
 
         self.core_pattern = [single_pattern(span) for span in self.core_list]
@@ -240,10 +263,11 @@ class PatternModel(object):
                         e_span_pattern = single_pattern(e_span)
 
                         extract_infos.append((g.start(1), e_span, self.calculate(e_span)))
+                        break
                 except Exception as e:
                     print(text, pt)
                     raise Exception
-            extract_infos.sort(key=lambda x: x[2], reverse=True)
+            # extract_infos.sort(key=lambda x: x[2], reverse=True)
             if extract_infos:
                 extract = (extract_infos[0][0], extract_infos[0][1])
             predict_res.append(extract)
@@ -258,24 +282,26 @@ for schema in schema_data:
     event_type = schema["event_type"]
     for role in schema["role_list"]:
         role_value = role["role"]
-        test_train = sample_data(event_type, role_value)
+        test_train = sample_data(event_type, role_value, train_data)
+        test_eval = sample_data(event_type, role_value, eval_data)
         if len(test_train) == 0:
             continue
         test_train_feature = [d[0] for d in test_train]
         test_train_label = [(d[1],d[2]) for d in test_train]
 
+        test_eval_feature = [d[0] for d in test_eval]
+        test_eval_label = [(d[1],d[2]) for d in test_eval]
         pt = PatternModel()
         pt.fit(test_train_feature, test_train_label)
-        pres = pt.predict(test_train_feature)
+        pres = pt.predict(test_eval_feature)
 
-        hard_eval = hard_score_res(test_train_label, pres)
-        soft_eval = soft_score_res(test_train_label, pres)
+        hard_eval = hard_score_res(test_eval_label, pres)
+        soft_eval = soft_score_res(test_eval_label, pres)
         print(soft_eval)
 
         hit_count += hard_eval["score"]
         pred_count += soft_eval["p_count"]
         real_count += soft_eval["d_count"]
-
 
 
 print(hit_count/pred_count, hit_count/real_count)
