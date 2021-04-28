@@ -28,23 +28,27 @@ for doc in bd_data_loader.document:
 
 def cut_sentence(input_sentence):
     innser_sentence_list = []
-    cut_char = {"，"}
+    sentence_len = len(input_sentence)
+    cut_char = {"，", " ", "；", "》", "）", "、", ";"}
     indx = 0
 
-    while indx<len(input_sentence):
+    while indx < sentence_len:
 
-        last_ind = indx+max_len
-        while last_ind > indx:
-            if input_sentence[last_ind-1] in cut_char:
-                break
-            last_ind -= 1
-
+        last_ind = min(indx+max_len, sentence_len)
+        if last_ind != sentence_len:
+            while last_ind > indx:
+                if input_sentence[last_ind-1] in cut_char:
+                    break
+                last_ind -= 1
+        if indx == last_ind:
+            print(input_sentence)
+            raise Exception
         pre_cut = input_sentence[indx:last_ind]
         innser_sentence_list.append(pre_cut)
         indx = last_ind
-
+    for sentence in innser_sentence_list:
+        assert len(sentence) <= max_len
     return innser_sentence_list
-
 
 
 
@@ -74,8 +78,12 @@ class DataIter(object):
                 sentence = ""
             else:
                 sentence += char
-        if sentence.strip():
-            sentences.append(sentence.strip())
+        sentence = sentence.strip()
+        if sentence:
+            if len(sentence) > max_len:
+                sentences += cut_sentence(sentence)
+            else:
+                sentences.append(sentence)
 
         for sentence in sentences:
             sentence_id = [self.input_loader.char2id[char] for char in sentence]
