@@ -276,6 +276,22 @@ class Entity(object):
         self._start = input_start
         self._end = input_end
 
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def start(self):
+        return self._start
+
+    @property
+    def end(self):
+        return self._end
+
+    @property
+    def entity_text(self):
+        return self._entity_text
+
 
 class Relation(object):
 
@@ -283,6 +299,19 @@ class Relation(object):
         self._id = input_id
         self._relation_sub = input_sub
         self._relation_obj = input_obj
+
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def sub(self):
+        return self._relation_sub
+
+    @property
+    def obj(self):
+        return self._relation_obj
 
 
 class LoaderBaiduKg2019RealtionExtractionV2(object):
@@ -406,6 +435,7 @@ class LoaderDuie2Dataset(object):
         train_data_list = load_json_line_data(self.train_path)
 
         self.data_len = 0
+        self.entity_max_len = 0
         self.relation2id = dict()
         self.subject2id = dict()
         self.object2id = dict()
@@ -465,6 +495,7 @@ class LoaderDuie2Dataset(object):
 
                 entity_sub = Entity(self.entity2id[sub_subject_type], sub_subject, sub_indx,
                                     sub_indx + len(sub_subject))
+                self.entity_max_len = max(self.entity_max_len, len(sub_subject))
 
                 entity_list.append(entity_sub)
 
@@ -479,6 +510,7 @@ class LoaderDuie2Dataset(object):
                     break
                 entity_obj = Entity(self.entity2id[sub_object_type], sub_object, obj_indx,
                                     obj_indx + len(sub_object))
+                self.entity_max_len = max(self.entity_max_len, len(sub_object))
                 entity_list.append(entity_obj)
 
                 predicate_type = spo["predicate"]
