@@ -12,10 +12,14 @@
 """
 import re
 import json
+import logging
 import numpy as np
 from nlp_applications.data_loader import load_json_line_data
 from nlp_applications.utils import load_word_vector
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LogisticRegression
+
+logger = logging.getLogger()
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 schema_path = "D:\data\句子级事件抽取\duee_schema\\duee_event_schema.json"
 data_path = "D:\data\句子级事件抽取\duee_train.json\\duee_train.json"
@@ -31,6 +35,7 @@ train_data = list(train_data)
 eval_data = list(eval_data)
 
 word_embed = load_word_vector(word_embed_path)
+logger.info("word2vec is load")
 
 # for schema in schema_data:
 #     print(schema)
@@ -176,7 +181,7 @@ class PatternModel(object):
         self.pattern_list = []
         self.core_list = []
         self.core_pattern = []
-        self.clf = LinearRegression()
+        self.clf = LogisticRegression(solver='lbfgs')
 
     def negative_choice(self, input_text, positive_span=list()):
         dlen = len(input_text)
@@ -185,9 +190,46 @@ class PatternModel(object):
             j = np.random.randint(0, dlen)
             s = min(i, j)
             e = max(i, j)
-            if input_text[s:e+1] in positive_span:
+            if input_text[s:e+1] in positive_span or input_text[s:e+1].strip() == "":
                 continue
             return input_text[s:e+1]
+
+    def generate_feature(self, input_list):
+        features = []
+        for data in input_list:
+            feature = None
+            p_count = 0
+            for char in data:
+                if char not in word_embed:
+                    char_embed = np.zeros(300)
+                else:
+                    char_embed = word_embed[char]
+                if feature is None:
+                    feature = char_embed
+                else:
+                    feature += char_embed
+                p_count += 1
+            feature /= p_count
+            features.append(feature)
+        return features
+
+    def train_core_model(self, input_positive_list, input_negative_list):
+        p_feature = self.generate_feature(input_positive_list)
+        n_feature = self.generate_feature(input_negative_list)
+        p_label = [1 for _ in input_positive_list]
+        n_label = [0 for _ in input_negative_list]
+
+        feature = p_feature+n_feature
+        label = p_label+n_label
+
+        self.clf.fit(feature, label)
+
+    def train_single_pattern_model(self, input_text, input_label_data):
+        start_indx = input_label_data[0]
+        end_indx = input_label_data[0] + len(input_label_data[1])
+        start_context = input_text[:start_indx]
+        core_data = input_label_data[1]
+        end_context = input_text[end_indx:]
 
 
     def fit(self, input_feature_data, label_datas):
@@ -208,6 +250,8 @@ class PatternModel(object):
 
             pattern_statis.setdefault((start_p, end_p), 0)
             pattern_statis[(start_p, end_p)] += 1
+
+        self.train_core_model(self.core_list, negative_span)
 
         pattern_list = [(p[0], p[1], c) for p, c in pattern_statis.items()]
         pattern_list.sort()
@@ -233,7 +277,6 @@ class PatternModel(object):
 
         for p1, p2, _ in (pattern_list_value):
             pattern = r"{0}(.+?)[{1}]".format(p1, "".join(p2))
-            print(pattern)
             self.pattern_list.append(pattern)
 
         self.core_pattern = [single_pattern(span) for span in self.core_list]
@@ -260,16 +303,23 @@ class PatternModel(object):
                     g = re.search(pt, text)
                     if g:
                         e_span = g.group(1)
-                        e_span_pattern = single_pattern(e_span)
+                        if e_span.strip():
+                        # e_span_pattern = single_pattern(e_span)
 
-                        extract_infos.append((g.start(1), e_span, self.calculate(e_span)))
-                        break
+                            extract_infos.append((g.start(1), e_span, 0))
                 except Exception as e:
                     print(text, pt)
                     raise Exception
+
             # extract_infos.sort(key=lambda x: x[2], reverse=True)
             if extract_infos:
-                extract = (extract_infos[0][0], extract_infos[0][1])
+                inx = 0
+                # extract_span_list = [e_info[1] for e_info in extract_infos]
+                # extract_span_feature = self.generate_feature(extract_span_list)
+                # extract_span_res = self.clf.predict_proba(extract_span_feature)
+                # inx = np.argmax(extract_span_res[:,1])
+
+                extract = (extract_infos[inx][0], extract_infos[inx][1])
             predict_res.append(extract)
 
         return predict_res
@@ -278,6 +328,33 @@ class PatternModel(object):
 hit_count = 0.0
 pred_count = 0.0
 real_count = 0.0
+train_eval_dict = {
+    "hard_hit_count": 0,
+    "soft_hit_count": 0,
+    "hard_pre_count": 0,
+    "soft_pre_count": 0,
+    "hard_real_count": 0,
+    "soft_real_count": 0
+}
+eval_eval_dict = {
+    "hard_hit_count": 0,
+    "soft_hit_count": 0,
+    "hard_pre_count": 0,
+    "soft_pre_count": 0,
+    "hard_real_count": 0,
+    "soft_real_count": 0
+}
+
+
+def calculate_result(input_eval_dict, hard_eval, soft_eval):
+    input_eval_dict["hard_hit_count"] += hard_eval["score"]
+    input_eval_dict["hard_pre_count"] += hard_eval["p_count"]
+    input_eval_dict["hard_real_count"] += hard_eval["d_count"]
+    input_eval_dict["soft_hit_count"] += soft_eval["score"]
+    input_eval_dict["soft_pre_count"] += soft_eval["p_count"]
+    input_eval_dict["soft_real_count"] += soft_eval["d_count"]
+
+
 for schema in schema_data:
     event_type = schema["event_type"]
     for role in schema["role_list"]:
@@ -293,15 +370,43 @@ for schema in schema_data:
         test_eval_label = [(d[1],d[2]) for d in test_eval]
         pt = PatternModel()
         pt.fit(test_train_feature, test_train_label)
-        pres = pt.predict(test_eval_feature)
+        train_pres = pt.predict(test_train_feature)
+        eval_pres = pt.predict(test_eval_feature)
 
-        hard_eval = hard_score_res(test_eval_label, pres)
-        soft_eval = soft_score_res(test_eval_label, pres)
-        print(soft_eval)
+        train_hard_eval = hard_score_res(test_train_label, train_pres)
+        train_soft_eval = soft_score_res(test_train_label, train_pres)
 
-        hit_count += hard_eval["score"]
-        pred_count += soft_eval["p_count"]
-        real_count += soft_eval["d_count"]
+        eval_hard_eval = hard_score_res(test_eval_label, eval_pres)
+        eval_soft_eval = soft_score_res(test_eval_label, eval_pres)
 
+        calculate_result(train_eval_dict, train_hard_eval, train_soft_eval)
+        calculate_result(eval_eval_dict, eval_hard_eval, eval_soft_eval)
 
-print(hit_count/pred_count, hit_count/real_count)
+train_hard_p_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_pre_count"]
+train_hard_r_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_real_count"]
+train_hard_f1_value = 2*train_hard_p_value*train_hard_r_value/(train_hard_p_value+train_hard_r_value)
+
+logger.info("train hard precision: {0} recall: {1} f1_value: {2}".format(train_hard_p_value, train_hard_r_value, train_hard_f1_value))
+
+train_soft_p_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_pre_count"]
+train_soft_r_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_real_count"]
+train_soft_f1_value = 2*train_hard_p_value*train_hard_r_value/(train_soft_p_value+train_soft_r_value)
+
+logger.info("train soft precision: {0} recall: {1} f1_value: {2}".format(train_soft_p_value, train_soft_r_value, train_soft_f1_value))
+
+soft_hard_p_value = eval_eval_dict["hard_hit_count"]/eval_eval_dict["hard_pre_count"]
+soft_hard_r_value = eval_eval_dict["hard_hit_count"]/eval_eval_dict["hard_real_count"]
+soft_hard_f1_value = 2*soft_hard_p_value*soft_hard_r_value/(soft_hard_p_value+soft_hard_r_value)
+
+logger.info("eval hard precision: {0} recall: {1} f1_value: {2}".format(soft_hard_p_value, soft_hard_r_value, soft_hard_f1_value))
+
+soft_soft_p_value = eval_eval_dict["soft_hit_count"]/eval_eval_dict["soft_pre_count"]
+soft_soft_r_value = eval_eval_dict["soft_hit_count"]/eval_eval_dict["soft_real_count"]
+soft_soft_f1_value = 2*soft_soft_p_value*soft_soft_r_value/(soft_soft_p_value+soft_soft_r_value)
+
+logger.info("eval soft precision: {0} recall: {1} f1_value: {2}".format(soft_soft_p_value, soft_soft_r_value, soft_soft_f1_value))
+
+# p_value = hit_count/pred_count
+# r_value = hit_count/real_count
+# f1_value =
+# print(p_value, r_value, f1_value)
