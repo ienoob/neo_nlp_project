@@ -19,7 +19,7 @@ entity_max_len = 70
 random_choice_num = 100
 random_relation_num = 20
 
-data_path = "D:\\data\\关系抽取\\"
+data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取"
 data_loader = LoaderDuie2Dataset(data_path)
 
 print(len(data_loader.documents))
@@ -45,7 +45,7 @@ def convict_data(input_batch_data):
 
         batch_entity_num.append(len(data["entity_span"]))
         batch_relation_num.append(len(data["relation_labels"]))
-        batch_relation_entity.append(data["relation_entity_spans"])
+        # batch_relation_entity.append(data["relation_entity_spans"])
         max_len = max(max_len, len(data["encoding"]))
 
 
@@ -63,18 +63,29 @@ def convict_data(input_batch_data):
         for entity_s in data["entity_span"]:
             batch_entity_span.append(entity_s)
 
+        for relation_pair in data["relation_entity_spans"]:
+            batch_relation_entity.append(relation_pair)
+    batch_encodings = tf.keras.preprocessing.sequence.pad_sequences(batch_encodings, padding="post")
+    batch_encodings = tf.cast(batch_encodings, dtype=tf.int32)
+    batch_context_mask = tf.keras.preprocessing.sequence.pad_sequences(batch_context_mask, padding="post")
+    batch_context_mask = tf.cast(batch_context_mask, dtype=tf.int32)
+    batch_entity_masks = tf.keras.preprocessing.sequence.pad_sequences(batch_entity_masks, padding="post")
+    batch_entity_masks = tf.cast(batch_entity_masks, dtype=tf.int32)
+    batch_rel_masks = tf.keras.preprocessing.sequence.pad_sequences(batch_rel_masks, padding="post")
+    batch_rel_masks = tf.cast(batch_rel_masks, dtype=tf.int32)
+
 
     return {
-        "encodings": tf.keras.preprocessing.sequence.pad_sequences(batch_encodings, padding="post"),
-        "context_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_context_mask, padding="post"),
+        "encodings": batch_encodings,
+        "context_masks": batch_context_mask,
         "entity_spans": tf.reshape(tf.cast(batch_entity_span, dtype=tf.int32), (len(batch_entity_span), 1)),
-        "entity_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_entity_masks, padding="post"),
+        "entity_masks": batch_entity_masks,
         "entity_sizes": tf.cast(batch_entity_sizes, dtype=tf.int32),
-        "entity_num": batch_entity_num,
+        "entity_num": tf.reshape(tf.cast(batch_entity_num, dtype=tf.int32), (len(batch_entity_num), 1)),
         "relations": tf.reshape(tf.cast(batch_relations, dtype=tf.int32), (len(batch_relations), 1)),
-        "rel_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_rel_masks, padding="post"),
-        "relation_entity": batch_relation_entity,
-        "relation_num": batch_relation_num
+        "rel_masks": batch_rel_masks,
+        "relation_entity": tf.reshape(tf.cast(batch_relation_entity, dtype=tf.int32), (len(batch_relation_entity), 2)),
+        "relation_num": tf.reshape(tf.cast(batch_relation_num, dtype=tf.int32), (len(batch_relation_num), 1))
     }
 
 
@@ -228,41 +239,53 @@ def batch_index(first_list, index_list):
     return tf.cast(new_data, dtype=tf.float32)
 
 
-def build_entity_feature(input_embed, entity_mask, input_size):
-    inner_batch_num = input_embed.shape[0]
+def new_func(first_list, index_list):
+    n_shape = first_list.shape[1]*2
+    target_tensor = tf.gather(first_list, index_list)
+    target_tensor = tf.reshape(target_tensor, (n_shape,))
+    return target_tensor
 
-    entity_feature = []
-    for i in range(inner_batch_num):
-        for v in range(input_size[i]):
-            entity_feature.append(input_embed[i])
-    entity_feature = tf.cast(entity_feature, dtype=tf.float32)
-    m = tf.cast(tf.expand_dims(entity_mask, -1) == 0, tf.float32) * (-1e30)
+def build_entity_feature(input_embed, entity_mask, input_size: tf.Tensor):
+    inner_batch_num = input_embed.shape[0]
+    input_size = tf.reshape(input_size, (inner_batch_num,))
+    entity_feature = tf.repeat(input_embed, input_size, axis=0)
+    # for i in range(inner_batch_num):
+    #     for v in range(input_size[i]):
+    #         entity_feature.append(input_embed[i])
+    # entity_feature = tf.cast(entity_feature, dtype=tf.float32)
+    m = tf.cast(tf.expand_dims(entity_mask, -1) == 0, tf.float32) * (-1e1)
     entity_spans_pool = m + entity_feature
     entity_spans_pool = tf.reduce_max(entity_spans_pool, axis=1)
 
     return entity_spans_pool
 
-def build_relation_feature(input_embed, entity_spans_pool, input_relation_pair,
-                           size_embeddings, rel_mask, input_num):
-    inner_batch_num = input_embed.shape[0]
 
-    relation_embed_feature = []
+def build_relation_feature(input_embed, entity_spans_pool, input_relation_entity,
+                           size_embeddings, rel_mask, input_num, relation_count=0):
+    inner_batch_num = input_embed.shape[0]
+    input_num = tf.reshape(input_num, (inner_batch_num, ))
+    relation_embed_feature = tf.repeat(input_embed, input_num, axis=0)
+
     relation_entity_feature = []
     relation_size_feature = []
-    for i in range(inner_batch_num):
-        for v in range(input_num[i]):
-            relation_embed_feature.append(input_embed[i])
-            s, o = input_relation_pair[i][v]
-            relation_entity_feature.append(tf.concat([entity_spans_pool[i*inner_batch_num+s], entity_spans_pool[i*inner_batch_num+0]], axis=0))
-            relation_size_feature.append(tf.concat([size_embeddings[i*inner_batch_num+s], size_embeddings[i*inner_batch_num+0]], axis=0))
-    relation_embed_feature = tf.cast(relation_embed_feature, dtype=tf.float32)
-    m = tf.cast(tf.expand_dims(rel_mask, -1) == 0, tf.float32) * (-1e30)
+
+    print(input_relation_entity, "((((((((((", rel_mask)
+    # relation_count = input_relation_entity.shape[0]
+
+    for iv in range(relation_count):
+        # relation_embed_feature.append(input_embed[i])
+        ind = input_relation_entity[iv]
+        relation_entity_pair = new_func(entity_spans_pool, ind)
+        relation_entity_feature.append(relation_entity_pair)
+        relation_size_pair = new_func(size_embeddings, ind)
+        relation_size_feature.append(relation_size_pair)
+
+    m = tf.cast(tf.expand_dims(rel_mask, -1) == 0, tf.float32) * (-1e1)
     relation_spans_pool = m + relation_embed_feature
     relation_embed = tf.reduce_max(relation_spans_pool, axis=1)
-    relation_entity_feature = tf.cast(relation_entity_feature, dtype=tf.float32)
-    relation_size_feature = tf.cast(relation_size_feature, dtype=tf.float32)
-
-    relation_feature = tf.concat([relation_embed, relation_entity_feature, relation_size_feature], axis=1)
+    relation_entity_featurev = tf.stack(relation_entity_feature)
+    relation_size_featurev = tf.stack(relation_size_feature)
+    relation_feature = tf.concat([relation_embed, relation_entity_featurev, relation_size_featurev], axis=1)
 
     return relation_feature
 
@@ -285,18 +308,18 @@ class SpERt(tf.keras.models.Model):
         self._entity_types = entity_types
         self._max_pairs = max_pairs
 
-    def call(self, encodings, context_masks, entity_masks, entity_sizes, entity_nums, relations, rel_masks,  relation_nums,
+    def call(self, text_ids, text_contexts, entity_masks, entity_sizes, entity_nums, relations_entity, rel_masks,  relation_nums,
              training=None, mask=None):
         # z这里用普通embed替代bert, 这是为了正常运行，毕竟╮(╯▽╰)╭内存太小了
-        h = self.embed(encodings)
+        h = self.embed(text_ids)
 
         size_embeddings = self.size_embed(entity_sizes)
         entity_spans_pool = build_entity_feature(h, entity_masks, entity_nums)
         entity_repr = tf.concat([entity_spans_pool, size_embeddings], axis=1)
         entity_repr = self.dropout(entity_repr)
         entity_clf = self.entity_classifier(entity_repr)
-
-        relation_feature = build_relation_feature(h, entity_spans_pool, relations, size_embeddings, rel_masks, relation_nums)
+        relation_count = relations_entity.shape[0]
+        relation_feature = build_relation_feature(h, entity_spans_pool, relations_entity, size_embeddings, rel_masks, relation_nums, relation_count)
         rel_clf = self.rel_classifier(relation_feature)
 
         return entity_clf, rel_clf
@@ -352,6 +375,7 @@ epoch = 100
 for e in range(epoch):
     batch_data_iter = get_sample_data(batch_num)
     for i, batch_data in enumerate(batch_data_iter):
+        print(batch_data["relation_entity"], "++++++++")
         lossv = train_step(batch_data["encodings"],
                            batch_data["context_masks"],
                            batch_data["entity_masks"],
@@ -363,7 +387,7 @@ for e in range(epoch):
                            batch_data["entity_spans"],
                            batch_data["relations"])
 
-        if i % 100 == 0:
+        if i % 10 == 0:
             print("epoch {0} batch {1} loss value is {2}".format(e, i, lossv))
 
 
