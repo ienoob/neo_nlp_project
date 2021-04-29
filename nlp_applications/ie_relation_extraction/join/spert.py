@@ -241,8 +241,7 @@ def batch_index(first_list, index_list):
 
 def new_func(first_list, index_list):
     n_shape = first_list.shape[1]*2
-    target_tensor = tf.gather(first_list, index_list)
-    target_tensor = tf.reshape(target_tensor, (n_shape,))
+    target_tensor = tf.reshape(tf.gather(first_list, index_list), (n_shape,))
     return target_tensor
 
 def build_entity_feature(input_embed, entity_mask, input_size: tf.Tensor):
@@ -272,8 +271,8 @@ def build_relation_feature(input_embed, entity_spans_pool, input_relation_entity
     # relation_count = input_relation_entity.shape[0]
 
     for iv in range(relation_count):
-        # relation_embed_feature.append(input_embed[i])
         ind = input_relation_entity[iv]
+        # relation_embed_feature.append(input_embed[i])
         relation_entity_pair = new_func(entity_spans_pool, ind)
         relation_entity_feature.append(relation_entity_pair)
         relation_size_pair = new_func(size_embeddings, ind)
@@ -348,7 +347,7 @@ loss_f2 = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 # print(loss(sample_relation_label, sample_relation_res))
 
 
-@tf.function()
+@tf.function
 def train_step(encodings, context_masks, entity_masks, entity_sizes, entity_num, relation_entity, rel_masks, relation_num, entity_spans, relations):
 
     with tf.GradientTape() as tape:
