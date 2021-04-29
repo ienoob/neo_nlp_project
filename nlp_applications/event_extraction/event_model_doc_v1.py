@@ -59,6 +59,21 @@ class DataIter(object):
         self.input_batch_num = input_batch_num
         self.max_len = 0
 
+    def _search_index(self, target_word, input_sentence_list):
+        out_index = (-1, -1)
+        for i, sentence in enumerate(input_sentence_list):
+            try:
+                index_j = sentence.index(target_word)
+                out_index = (i, index_j)
+                break
+            except ValueError as ve:
+                print(f'Error Message = {ve}')
+        if out_index[0] == -1:
+            print(input_sentence_list, target_word)
+            raise ValueError
+
+        return out_index
+
     def _transformer2feature(self, input_doc: EventDocument):
         text = input_doc.text
         title = input_doc.title
@@ -85,7 +100,16 @@ class DataIter(object):
             else:
                 sentences.append(sentence)
 
+        for event in input_doc.event_list:
+            for arg in event.arguments:
+                if arg.is_enum:
+                    continue
+                arg_index = self._search_index(arg.argument, sentences)
+                arg.start = arg_index
+
         for sentence in sentences:
+            if len(sentence) == 0:
+                continue
             sentence_id = [self.input_loader.char2id[char] for char in sentence]
 
             self.max_len = max(self.max_len, len(sentence_id))
@@ -112,18 +136,21 @@ class DataIter(object):
             if len(inner_batch_data) == self.input_batch_num:
                 yield self.batch_transformer(inner_batch_data)
                 inner_batch_data = []
+        if inner_batch_data:
+            yield self.batch_transformer(inner_batch_data)
 
 
 
-data_iter = DataIter(bd_data_loader, 2)
+data_iter = DataIter(bd_data_loader, 10)
 
 for batch_data in data_iter:
-    pass
+    print("=========================")
 
-print(data_iter.max_len)
+print(data_iter.max_len, "hello")
 
-vocab_size = 64
+vocab_size = len(bd_data_loader.char2id)
 embed_size = 64
+lstm_size = 64
 
 
 class EventModelDocV1(tf.keras.Model):
@@ -132,8 +159,8 @@ class EventModelDocV1(tf.keras.Model):
     def __init__(self):
         super(EventModelDocV1, self).__init__()
         self.embed = tf.keras.layers.Embedding(vocab_size, embed_size)
-
-
+        self.lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size, return_sequences=True))
 
     def call(self, inputs, training=None, mask=None):
-        pass
+        batch_num = inputs.shape[0]
+
