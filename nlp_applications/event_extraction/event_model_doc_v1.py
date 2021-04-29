@@ -51,12 +51,12 @@ def cut_sentence(input_sentence):
     return innser_sentence_list
 
 
-
 class DataIter(object):
 
     def __init__(self, input_loader, input_batch_num):
         self.input_loader = input_loader
         self.input_batch_num = input_batch_num
+        self.entity_label = {"O": 0}
         self.max_len = 0
 
     def _search_index(self, target_word, input_sentence_list):
@@ -67,7 +67,8 @@ class DataIter(object):
                 out_index = (i, index_j)
                 break
             except ValueError as ve:
-                print(f'Error Message = {ve}')
+                pass
+                # print(f'Error Message = {ve}')
         if out_index[0] == -1:
             print(input_sentence_list, target_word)
             raise ValueError
@@ -88,7 +89,7 @@ class DataIter(object):
                 if len(sentence) > max_len:
                     tiny_sentence_list = cut_sentence(sentence)
                     sentences += tiny_sentence_list
-                else:
+                elif sentence:
                     sentences.append(sentence)
                 sentence = ""
             else:
@@ -99,17 +100,17 @@ class DataIter(object):
                 sentences += cut_sentence(sentence)
             else:
                 sentences.append(sentence)
-
+        entity_list = set()
+        entity_loc_map = dict()
         for event in input_doc.event_list:
             for arg in event.arguments:
                 if arg.is_enum:
                     continue
-                arg_index = self._search_index(arg.argument, sentences)
-                arg.start = arg_index
+                row_ind, column_ind_start = self._search_index(arg.argument, sentences)
+                entity_list.add((row_ind, column_ind_start, column_ind_start+len(arg.argument), arg.role))
 
+        entity_label = []
         for sentence in sentences:
-            if len(sentence) == 0:
-                continue
             sentence_id = [self.input_loader.char2id[char] for char in sentence]
 
             self.max_len = max(self.max_len, len(sentence_id))
@@ -141,10 +142,9 @@ class DataIter(object):
 
 
 
-data_iter = DataIter(bd_data_loader, 10)
+data_iter = DataIter(bd_data_loader, 2)
 
-for batch_data in data_iter:
-    print("=========================")
+
 
 print(data_iter.max_len, "hello")
 
@@ -164,3 +164,8 @@ class EventModelDocV1(tf.keras.Model):
     def call(self, inputs, training=None, mask=None):
         batch_num = inputs.shape[0]
 
+
+for batch_data in data_iter:
+    print("=========================")
+
+    break
