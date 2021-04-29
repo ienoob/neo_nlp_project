@@ -269,7 +269,6 @@ def build_relation_feature(input_embed, entity_spans_pool, input_relation_entity
     relation_entity_feature = []
     relation_size_feature = []
 
-    print(input_relation_entity, "((((((((((", rel_mask)
     # relation_count = input_relation_entity.shape[0]
 
     for iv in range(relation_count):
@@ -349,7 +348,7 @@ loss_f2 = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 # print(loss(sample_relation_label, sample_relation_res))
 
 
-@tf.function(experimental_relax_shapes=True)
+@tf.function()
 def train_step(encodings, context_masks, entity_masks, entity_sizes, entity_num, relation_entity, rel_masks, relation_num, entity_spans, relations):
 
     with tf.GradientTape() as tape:
@@ -375,7 +374,6 @@ epoch = 100
 for e in range(epoch):
     batch_data_iter = get_sample_data(batch_num)
     for i, batch_data in enumerate(batch_data_iter):
-        print(batch_data["relation_entity"], "++++++++")
         lossv = train_step(batch_data["encodings"],
                            batch_data["context_masks"],
                            batch_data["entity_masks"],
