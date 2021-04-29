@@ -429,7 +429,7 @@ class LoaderDuie2Dataset(object):
     """
     def __init__(self, data_path):
         self.schema_path = data_path + "//duie_schema//duie_schema.json"
-        self.train_path = data_path + "//duie_sample.json//duie_sample.json"
+        self.train_path = data_path + "//duie_train.json//duie_train.json"
 
         schema_data_list = load_json_line_data(self.schema_path)
         train_data_list = load_json_line_data(self.train_path)
@@ -524,14 +524,23 @@ class LoaderDuie2Dataset(object):
 
 class Argument(object):
 
-    def __init__(self, input_argument, input_role, input_start_index):
+    def __init__(self, input_argument, input_role_id, input_role, input_start_index):
+
         self._argument = input_argument
+        self._role_id = input_role_id
         self._role = input_role
         self._start = input_start_index
+
+        self.is_enum = 0
+        self.enum_items = []
 
     @property
     def argument(self):
         return self._argument
+
+    @property
+    def role_id(self):
+        return self._role_id
 
     @property
     def role(self):
@@ -540,6 +549,10 @@ class Argument(object):
     @property
     def start(self):
         return self._start
+
+    @start.setter
+    def start(self, input_start):
+        self._start = input_start
 
 
 class Event(object):
@@ -570,11 +583,12 @@ class Event(object):
 
 
 class EventDocument(object):
-    def __init__(self, input_id, input_text, input_text_id, input_title=None):
+    def __init__(self, input_id, input_text, input_text_id, input_title=None, input_title_id=None):
         self._id = input_id
         self._text = input_text
         self._text_id = input_text_id
         self._title = input_title
+        self._sentence = []
         self._event_list = []
 
     @property
@@ -625,10 +639,19 @@ class LoaderBaiduDueeV1(object):
         self.event2id = {
             "none_event": 0
         }
+        self.argument_role2id = {
+            "$unk$": 0
+        }
+        role_enum = dict()
         for schema in schema_data:
             event_type = schema["event_type"]
             if event_type not in self.event2id:
                 self.event2id[event_type] = len(self.event2id)
+            for role in schema["role_list"]:
+                if role["role"] not in self.argument_role2id:
+                    self.argument_role2id[role["role"]] = len(self.argument_role2id)
+                if "enum_items" in role:
+                    role_enum[role["role"]] = role["enum_items"]
 
         train_path = data_path + "\\duee_train.json\\duee_train.json"
 
@@ -637,9 +660,7 @@ class LoaderBaiduDueeV1(object):
             "$pad$": 0,
             "$unk$": 1
         }
-        self.argument_role2id = {
-            "$unk$": 0
-        }
+
         train_data = load_json_line_data(train_path)
         for i, sub_train_data in enumerate(train_data):
 
@@ -664,9 +685,6 @@ class LoaderBaiduDueeV1(object):
                     sub_arg_role = sub_argument["role"]
                     sub_arg_value = sub_argument["argument"]
 
-                    if sub_arg_role not in self.argument_role2id:
-                        self.argument_role2id[sub_arg_role] = len(self.argument_role2id)
-
                     argument = Argument(sub_arg_value, sub_arg_role, sub_arg_index)
                     event.add_argument(argument)
                 sub_doc.add_event(event)
@@ -687,10 +705,20 @@ class LoaderBaiduDueeFin(object):
         self.event2id = {
             "none_event": 0
         }
+        self.argument_role2id = {
+            "$unk$": 0
+        }
+        role_enum = dict()
         for schema in schema_data:
             event_type = schema["event_type"]
             if event_type not in self.event2id:
                 self.event2id[event_type] = len(self.event2id)
+            for role in schema["role_list"]:
+                if role["role"] not in self.argument_role2id:
+                    self.argument_role2id[role["role"]] = len(self.argument_role2id)
+                if "enum_items" in role:
+                    role_enum[role["role"]] = role["enum_items"]
+        self.id2event = {v:k for k,v in self.event2id.items()}
 
         train_path = data_path + "\\duee_fin_train.json\\duee_fin_train.json"
 
@@ -699,21 +727,27 @@ class LoaderBaiduDueeFin(object):
             "$pad$": 0,
             "$unk$": 1
         }
-        self.argument_role2id = {
-            "$unk$": 0
-        }
+
         train_data = load_json_line_data(train_path)
         for i, sub_train_data in enumerate(train_data):
 
             text = sub_train_data["text"]
+            title = sub_train_data["title"]
+            doc_id = sub_train_data["id"]
             text_id = []
+            title_id = []
 
             for char in text:
                 if char not in self.char2id:
                     self.char2id[char] = len(self.char2id)
                 text_id.append(self.char2id[char])
 
-            sub_doc = EventDocument(i, text, text_id)
+            for char in title:
+                if char not in self.char2id:
+                    self.char2id[char] = len(self.char2id)
+                title_id.append(self.char2id[char])
+
+            sub_doc = EventDocument(doc_id, text, text_id, title, title_id)
             for sub_event in sub_train_data.get("event_list", []):
                 event_id = self.event2id[sub_event["event_type"]]
                 sub_trigger = sub_event["trigger"]
@@ -722,18 +756,40 @@ class LoaderBaiduDueeFin(object):
                 event = Event(event_id, sub_trigger, sub_trigger_start_index)
 
                 for sub_argument in sub_event["arguments"]:
-                    try:
-                        sub_arg_index = text.index(sub_argument["argument"])
-                    except Exception:
-                        print(sub_argument)
-                        continue
+                    # sub_arg_index = text.index(sub_argument["argument"])
+                    # try:
+                    #     sub_arg_index = text.index(sub_argument["argument"])
+                    # except Exception:
+                    #     print(sub_argument)
+                    #     continue
+                    sub_arg_index = -1
                     sub_arg_role = sub_argument["role"]
                     sub_arg_value = sub_argument["argument"]
 
-                    if sub_arg_role not in self.argument_role2id:
-                        self.argument_role2id[sub_arg_role] = len(self.argument_role2id)
+                    # todo 修改数据
+                    if doc_id == "36ce324c5c05bae92f02e78a6ad8d40a" and sub_arg_role == "回购完成时间":
+                        sub_arg_value = "2020年第一次临时股东大会审议通过本次回购方案之日起12个月内"
+                    if doc_id == "da8f29a5ce27036464fbd06ac3628c8b" and sub_arg_value == "Himalaya\nCapital":
+                        sub_arg_value = "Himalaya"
+                    if doc_id == "68e59cc8d48a01bc473c17714e44649e":
+                        if sub_arg_value == "2015 年":
+                            sub_arg_value = "2015  年"
+                        if sub_arg_value == "2016 年":
+                            sub_arg_value = "2016  年"
+                        if sub_arg_value == "约 11 亿元":
+                            sub_arg_value = "约  11  亿元"
+                    if doc_id == "0cf76bda7c36d1364d533824bb846731":
+                        if sub_arg_value == "Wondery 表情":
+                            sub_arg_value = "Wondery"
+                    if doc_id == "cdfdb1e7b17256dc19d1b61d9ed8e83f":
+                        if sub_arg_value == "荣盛建设工程\n有限公司":
+                            sub_arg_value = "荣盛建设工程"
 
-                    argument = Argument(sub_arg_value, sub_arg_role, sub_arg_index)
+                    argument = Argument(sub_arg_value, self.argument_role2id[sub_arg_role], sub_arg_role, sub_arg_index)
+                    if sub_arg_role in role_enum:
+                        argument.is_enum = 1
+                        argument.enum_items = role_enum[sub_arg_role]
+
                     event.add_argument(argument)
                 sub_doc.add_event(event)
             self.document.append(sub_doc)

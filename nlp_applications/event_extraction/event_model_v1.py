@@ -74,7 +74,7 @@ def padding_data(input_batch):
         "event_trigger_end": tf.cast(event_trigger_end, dtype=tf.float32),
         "event_argument_start": tf.cast(event_argument_start, dtype=tf.float32),
         "event_argument_end": tf.cast(event_argument_end, dtype=tf.float32),
-        "trigger_masks": tf.cast(event_argument_end, dtype=tf.float32),
+        "trigger_masks": tf.cast(trigger_masks, dtype=tf.float32),
         "event_label_ids": event_label_ids,
         "eval_event_trigger": eval_event
     }
@@ -376,5 +376,5 @@ for ep in range(epoch):
 
         if batch % 10 == 0:
             print("epoch {0} batch {1} loss is {2}".format(ep, batch, loss_value))
-            predict_res = um_model.predict(data["encoding"])
-            eval_metric(data["eval_event_data"], predict_res)
+            # predict_res = um_model.predict(data["encoding"])
+            # eval_metric(data["eval_event_data"], predict_res)

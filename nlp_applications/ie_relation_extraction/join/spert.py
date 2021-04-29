@@ -15,10 +15,11 @@ import tensorflow as tf
 from nlp_applications.data_loader import LoaderDuie2Dataset, Document
 
 batch_num = 2
-entity_max_len = 50
+entity_max_len = 70
 random_choice_num = 100
+random_relation_num = 20
 
-data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取\\"
+data_path = "D:\\data\\关系抽取\\"
 data_loader = LoaderDuie2Dataset(data_path)
 
 print(len(data_loader.documents))
@@ -66,11 +67,11 @@ def convict_data(input_batch_data):
     return {
         "encodings": tf.keras.preprocessing.sequence.pad_sequences(batch_encodings, padding="post"),
         "context_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_context_mask, padding="post"),
-        "entity_spans": tf.cast(batch_entity_span, dtype=tf.int64),
+        "entity_spans": tf.reshape(tf.cast(batch_entity_span, dtype=tf.int32), (len(batch_entity_span), 1)),
         "entity_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_entity_masks, padding="post"),
-        "entity_sizes": tf.cast(batch_entity_sizes, dtype=tf.int64),
+        "entity_sizes": tf.cast(batch_entity_sizes, dtype=tf.int32),
         "entity_num": batch_entity_num,
-        "relations": tf.cast(batch_relations, dtype=tf.int64),
+        "relations": tf.reshape(tf.cast(batch_relations, dtype=tf.int32), (len(batch_relations), 1)),
         "rel_masks": tf.keras.preprocessing.sequence.pad_sequences(batch_rel_masks, padding="post"),
         "relation_entity": batch_relation_entity,
         "relation_num": batch_relation_num
@@ -134,22 +135,38 @@ def sample_single_data(doc: Document):
     relation_entity_list = list(relation_entity_set)
     relation_label = []
     relation_mask = []
+    negative_relation_data = []
     for i, ei in enumerate(relation_entity_list):
         for j, ej in enumerate(relation_entity_list):
             if i == j:
                 continue
 
-            relation_entity_span.append((entity_span_list.index(ei), entity_span_list.index(ej)))
-            relation_label.append(relation_entity_data.get((ei, ej), 0))
-
             sub = ei
             obj = ej
 
-            start = sub._end if sub._end > obj._start else obj._end
-            end = obj._start if sub._end > obj._start else sub._start
+            start = sub.end if sub.end > obj.start else obj.end
+            end = obj.start if sub.end > obj.start else sub.start
+            if start > end:
+                start, end = end, start
 
             relation_maskv = [1 if ind >= start and ind < end else 0 for ind in range(text_len)]
-            relation_mask.append(relation_maskv)
+            if (ei, ej) in relation_entity_data:
+
+                relation_entity_span.append((entity_span_list.index(ei), entity_span_list.index(ej)))
+                relation_label.append(relation_entity_data[(ei, ej)])
+                relation_mask.append(relation_maskv)
+            else:
+                negative_relation_data.append((entity_span_list.index(ei), entity_span_list.index(ej), 0, relation_maskv))
+
+    negative_num = len(negative_relation_data)
+    if negative_num > random_relation_num:
+        random_inx = np.random.choice(negative_num, random_relation_num)
+        negative_relation_data = [negative_relation_data[ind] for ind in random_inx]
+
+    for e1, e2, rl, rm in negative_relation_data:
+        relation_entity_span.append((e1, e2))
+        relation_label.append(rl)
+        relation_mask.append(rm)
 
     return {
         "encoding": text_ids,
@@ -158,8 +175,8 @@ def sample_single_data(doc: Document):
         "entity_mask": sub_entity_masks,
         "entity_size": sub_entity_size,
         "relation_entity_spans": relation_entity_span,
-        "relation_labels": tf.cast(relation_label, dtype=tf.int64),
-        "relation_masks": tf.cast(relation_mask, dtype=tf.int64),
+        "relation_labels": relation_label,
+        "relation_masks": tf.cast(relation_mask, dtype=tf.int32),
     }
 
 
@@ -180,7 +197,6 @@ hidden_size = 64
 size_embed_size = 64
 relation_type = len(data_loader.relation2id)
 entity_type = len(data_loader.entity2id)
-
 
 
 def get_token(h, x, token):
@@ -259,8 +275,8 @@ class SpERt(tf.keras.models.Model):
 
         self.embed = tf.keras.layers.Embedding(char_size, embed_size)
         self.size_embed = tf.keras.layers.Embedding(size_value, size_embed_size)
-        self.rel_classifier = tf.keras.layers.Dense(relation_type)
-        self.entity_classifier = tf.keras.layers.Dense(entity_type)
+        self.rel_classifier = tf.keras.layers.Dense(relation_type, activation="softmax")
+        self.entity_classifier = tf.keras.layers.Dense(entity_type, activation="softmax")
         self.dropout = tf.keras.layers.Dropout(0.5)
         self.rel_dropout = tf.keras.layers.Dropout(0.5)
 
@@ -293,13 +309,6 @@ class SpERt(tf.keras.models.Model):
 
 spert = SpERt(relation_type, entity_type, 10)
 
-sample_encoding = tf.constant([[1, 2]])
-sample_mask = tf.constant([[1, 1]])
-sample_entity_mask = tf.constant([[[1, 1], [1, 1], [1, 1]]])
-sample_entity_sizes = tf.constant([[2, 3, 2]])
-sample_relation = tf.constant([[[0, 1]]])
-sample_relation_mask = tf.constant([[1, 1]])
-
 # sample_entity_res, sample_relation_res = spert(sample_encoding, sample_mask, sample_entity_mask, sample_entity_sizes, sample_relation, sample_relation_mask)
 
 
@@ -309,13 +318,15 @@ sample_relation_mask = tf.constant([[1, 1]])
 sample_entity_label = tf.constant([[1, 2, 3]])
 sample_relation_label = tf.constant(([[1]]))
 
-loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+# loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 optimizer = tf.keras.optimizers.Adam()
+loss_f = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+loss_f2 = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 # print(loss(sample_entity_label, sample_entity_res))
 # print(loss(sample_relation_label, sample_relation_res))
 
 
-@tf.function()
+@tf.function(experimental_relax_shapes=True)
 def train_step(encodings, context_masks, entity_masks, entity_sizes, entity_num, relation_entity, rel_masks, relation_num, entity_spans, relations):
 
     with tf.GradientTape() as tape:
@@ -327,8 +338,9 @@ def train_step(encodings, context_masks, entity_masks, entity_sizes, entity_num,
                           relation_entity,
                           rel_masks,
                           relation_num)
-        loss_f = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        loss_v = loss_f(entity_spans, clf_logits) + loss_f(relations, relation_logits)
+        loss_v1 = loss_f(entity_spans, clf_logits)
+        loss_v2 = loss_f2(relations, relation_logits)
+        loss_v = loss_v1 + loss_v2
 
     variables = spert.variables
     gradients = tape.gradient(loss_v, variables)

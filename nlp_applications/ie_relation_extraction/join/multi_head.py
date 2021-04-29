@@ -17,6 +17,7 @@ char_embed = 10
 word_embed = 10
 
 
+
 class MultiHeaderModel(tf.keras.Model):
 
     def __init__(self):
@@ -24,5 +25,11 @@ class MultiHeaderModel(tf.keras.Model):
 
         self.char_embed = tf.keras.layers.Embedding(char_size, char_embed)
         self.word_embed = tf.keras.layers.Embedding(char_size, char_embed)
+
+    def call(self, encoding, entity_label, training=None, mask=None):
+        mask = None
+        char_embed = self.char_embed(encoding)
+
+
 
 
