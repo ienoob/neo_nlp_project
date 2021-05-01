@@ -794,3 +794,49 @@ class LoaderBaiduDueeFin(object):
                 sub_doc.add_event(event)
             self.document.append(sub_doc)
 
+
+class QaPair(object):
+
+    def __init__(self, input_qa_id, input_qa_type, input_qa):
+        self._id = input_qa_id
+        self._type = input_qa_type
+        self._qa = input_qa
+
+
+class QaDocument(object):
+    def __init__(self, input_title, input_context):
+        self._title = input_title
+        self._context = input_context
+        self._qa_list = []
+
+    @property
+    def title(self):
+        return self._title
+
+    @property
+    def context(self):
+        return self._context
+
+    @property
+    def qa_list(self):
+        return self._qa_list
+
+    def add_qa_item(self, qa):
+        self._qa_list.append(qa)
+
+
+class LoaderDuReaderChecklist(object):
+
+    def __init__(self, data_path):
+        self.train_path = data_path+"\dureader_checklist.dataset\dataset\\train.json"
+        self.dev_path = data_path+"\dureader_checklist.dataset\dataset\\dev.json"
+
+        train_data = json.load(open(self.train_path, encoding="utf-8"))
+        train_data_list = train_data["data"][0]["paragraphs"]
+        print(len(train_data_list))
+
+class LoaderBaiduDialogV1(object):
+
+    def __init__(self, data_path):
+        self.train_path = data_path+"\\Dialog_sample\Dialog_sample\\"
+
