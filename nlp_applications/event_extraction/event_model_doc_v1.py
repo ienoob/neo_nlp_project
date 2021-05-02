@@ -10,7 +10,7 @@ from typing import List, Callable
 import numpy as np
 from nlp_applications.data_loader import LoaderBaiduDueeFin, EventDocument, Event, Argument
 
-sample_path = "D:\\data\\篇章级事件抽取\\"
+sample_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\\篇章级事件抽取\\"
 bd_data_loader = LoaderBaiduDueeFin(sample_path)
 max_len = 256
 print(bd_data_loader.event2id)
@@ -123,10 +123,11 @@ class DataIter(object):
     def batch_transformer(self, input_batch_data):
         batch_sentences_id = []
         for data in input_batch_data:
-            batch_sentences_id.append(data["sentences_id"])
+            for sentence_id in data["sentences_id"]:
+                batch_sentences_id.append(sentence_id)
 
         return {
-            "sentences_id": batch_sentences_id
+            "sentences_id": tf.keras.preprocessing.sequence.pad_sequences(batch_sentences_id)
         }
 
     def __iter__(self):
@@ -163,9 +164,15 @@ class EventModelDocV1(tf.keras.Model):
 
     def call(self, inputs, training=None, mask=None):
         batch_num = inputs.shape[0]
+        input_id = self.embed(inputs)
+
+        return input_id
+
+emdv1 = EventModelDocV1()
 
 
 for batch_data in data_iter:
     print("=========================")
-
+    out = emdv1(batch_data["sentences_id"])
+    print(out.shape)
     break
