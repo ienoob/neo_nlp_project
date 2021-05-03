@@ -16,14 +16,14 @@ max_len = 256
 print(bd_data_loader.event2id)
 print(bd_data_loader.argument_role2id)
 
-for doc in bd_data_loader.document:
-    print(doc.title, len(doc.event_list))
-    # if len(doc.event_list)==3:
-    #     print(doc.text)
-    #     for event in doc.event_list:
-    #         print(bd_data_loader.id2event[event.id])
-    #         for arg in event.arguments:
-    #             print(arg.argument, arg.role)
+# for doc in bd_data_loader.document:
+#     print(doc.title, len(doc.event_list))
+#     # if len(doc.event_list)==3:
+#     #     print(doc.text)
+#     #     for event in doc.event_list:
+#     #         print(bd_data_loader.id2event[event.id])
+#     #         for arg in event.arguments:
+#     #             print(arg.argument, arg.role)
 
 
 def cut_sentence(input_sentence):
@@ -122,12 +122,23 @@ class DataIter(object):
 
     def batch_transformer(self, input_batch_data):
         batch_sentences_id = []
+        max_len = 0
+        max_sentence_num = 0
         for data in input_batch_data:
+            max_sentence_num = max(len(data["sentences_id"]), max_sentence_num)
             for sentence_id in data["sentences_id"]:
-                batch_sentences_id.append(sentence_id)
+                max_len = max(len(sentence_id), max_len)
+
+        for data in input_batch_data:
+            sub_sentences_id = data["sentences_id"]
+            sub_len = len(sub_sentences_id)
+            if sub_len < max_sentence_num:
+                sub_sentences_id += [tf.zeros(max_len) for _ in range(max_sentence_num-sub_len)]
+            sub_sentences_id = tf.keras.preprocessing.sequence.pad_sequences(sub_sentences_id, padding="post", maxlen=max_len)
+            batch_sentences_id.append(sub_sentences_id)
 
         return {
-            "sentences_id": tf.keras.preprocessing.sequence.pad_sequences(batch_sentences_id)
+            "sentences_id": tf.cast(batch_sentences_id, dtype=tf.int64)
         }
 
     def __iter__(self):
@@ -153,6 +164,12 @@ vocab_size = len(bd_data_loader.char2id)
 embed_size = 64
 lstm_size = 64
 
+class EventTree(tf.keras.Model):
+
+    def __init__(self):
+        super(EventTree, self).__init__()
+        self.event_value = None
+
 
 class EventModelDocV1(tf.keras.Model):
 
@@ -160,13 +177,17 @@ class EventModelDocV1(tf.keras.Model):
     def __init__(self):
         super(EventModelDocV1, self).__init__()
         self.embed = tf.keras.layers.Embedding(vocab_size, embed_size)
-        self.lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size, return_sequences=True))
+        self.lstm_layer = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size))
+        self.event_root = None
 
     def call(self, inputs, training=None, mask=None):
         batch_num = inputs.shape[0]
         input_id = self.embed(inputs)
 
-        return input_id
+        sentence_maxpool = tf.reduce_max(input_id, axis=1)
+        sentence_feature = self.lstm_layer(sentence_maxpool)
+
+        return sentence_feature
 
 emdv1 = EventModelDocV1()
 
