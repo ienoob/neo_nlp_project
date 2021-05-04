@@ -56,8 +56,14 @@ class DataIter(object):
     def __init__(self, input_loader, input_batch_num):
         self.input_loader = input_loader
         self.input_batch_num = input_batch_num
-        self.entity_label = {"O": 0}
+        self.entity_label2id = {"O": 0}
         self.max_len = 0
+
+        for e_label in self.input_loader.argument_role2id:
+            if e_label == "$unk$":
+                continue
+            self.entity_label2id[e_label+"_B"] = len(self.entity_label2id)
+            self.entity_label2id[e_label + "_I"] = len(self.entity_label2id)
 
     def _search_index(self, target_word, input_sentence_list):
         out_index = (-1, -1)
@@ -108,16 +114,22 @@ class DataIter(object):
                     continue
                 row_ind, column_ind_start = self._search_index(arg.argument, sentences)
                 entity_list.add((row_ind, column_ind_start, column_ind_start+len(arg.argument), arg.role))
+                entity_loc_map[(row_ind, column_ind_start)] = self.entity_label2id[arg.role+"_B"]
+                for ind in range(column_ind_start+1, column_ind_start+len(arg.argument)):
+                    entity_loc_map[(row_ind, ind)] = self.entity_label2id[arg.role+"_I"]
 
-        entity_label = []
-        for sentence in sentences:
+        entity_labels = []
+        for row_ind, sentence in enumerate(sentences):
             sentence_id = [self.input_loader.char2id[char] for char in sentence]
+            entity_label = [entity_loc_map.get((row_ind, col_id), 0) for col_id, char in enumerate(sentence)]
 
             self.max_len = max(self.max_len, len(sentence_id))
             sentences_id.append(sentence_id)
+            entity_labels.append(entity_label)
 
         return {
-            "sentences_id": sentences_id
+            "sentences_id": sentences_id,
+            "entity_label": entity_labels
         }
 
     def batch_transformer(self, input_batch_data):
@@ -166,9 +178,14 @@ lstm_size = 64
 
 class EventTree(tf.keras.Model):
 
-    def __init__(self):
+    def __init__(self, arguments):
         super(EventTree, self).__init__()
-        self.event_value = None
+        self.event_trigger = tf.keras.layers.Dense(1)
+
+    def call(self, inputs, training=None, mask=None):
+        return self.event_trigger(inputs)
+
+
 
 
 class EventModelDocV1(tf.keras.Model):
