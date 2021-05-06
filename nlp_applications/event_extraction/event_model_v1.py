@@ -409,7 +409,7 @@ for ep in range(epoch):
         if batch % 100 == 0:
             print("epoch {0} batch {1} loss is {2}".format(ep, batch, loss_value))
             um_model.save_weights(um_model_path, save_format='tf')
-            predict_res = um_model.predict(data["encoding"])
+            # predict_res = um_model.predict(data["encoding"])
             # eval_metric(data["eval_event_data"], predict_res)
 
 submit_res = []
