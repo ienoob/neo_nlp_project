@@ -463,6 +463,9 @@ class SpERt(tf.keras.models.Model):
         entity_repr = self.dropout(entity_repr)
         entity_clf = self.entity_classifier(entity_repr)
 
+        entity_list = tf.argmax(entity_clf, axis=-1)
+        entity_list = entity_list.numpy()
+
         relations_entity, relation_mask, relation_nums = self.filter_span(entity_clf, input_entity_start_end, input_max_len)
         if relations_entity.shape[0]:
             relation_feature = build_relation_feature(h, entity_spans_pool, relations_entity, size_embeddings, relation_mask,
@@ -471,7 +474,7 @@ class SpERt(tf.keras.models.Model):
             rel_clf_argmax = tf.argmax(rel_clf, axis=-1)
 
             rel_res = [(relations_entity[i].numpy()[0], relations_entity[i].numpy()[1], label) for i, label in enumerate(rel_clf_argmax.numpy())]
-            rel_res = [(input_entity_start_end[si], input_entity_start_end[oi], p) for si, oi, p in rel_res if p]
+            rel_res = [(input_entity_start_end[si], entity_list[si], input_entity_start_end[oi], entity_list[oi], p) for si, oi, p in rel_res if p]
             return rel_res
         else:
             return []
@@ -543,6 +546,7 @@ for e in range(epoch):
 
 spert.load_weights(model_path)
 batch_data_iter = get_test_sample_data(1)
+submit_res = []
 for i, batch_data in enumerate(batch_data_iter):
     pres = spert.predict(batch_data["encodings"],
                                batch_data["context_masks"],
@@ -551,7 +555,33 @@ for i, batch_data in enumerate(batch_data_iter):
                                batch_data["entity_num"],
                                batch_data["entity_start_end"],
                                batch_data["max_len"])
-    print(pres)
+    doc = data_loader.test_documents[i]
+    i_text = doc.text
+    spo_list = []
+    for sop in pres:
+        sub_i, sub_j = sop[0]
+        sub_type = sop[1]
+        obj_i, obj_j = sop[2]
+        obj_type = sop[3]
+        pre_type = sop[4]
+        spo_list.append({
+            "predicate": data_loader.id2relation[pre_type],
+            "subject": i_text[sub_i:sub_j],
+            "subject_type": data_loader.id2entity[sub_type],
+            "object": {
+                "@value": i_text[obj_i:obj_j],
+            },
+            "object_type": {
+                "@value": data_loader.id2entity[obj_type],
+            }
+        })
+
+    single_spo = {
+        "text": i_text,
+        "spo_list": spo_list
+    }
+    print(single_spo)
+    submit_res.append(single_spo)
     break
 
 

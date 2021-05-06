@@ -464,6 +464,9 @@ class LoaderDuie2Dataset(object):
             if object not in self.entity2id:
                 self.entity2id[object] = len(self.entity2id)
 
+        self.id2entity = {v:k for k, v in self.entity2id.items()}
+        self.id2relation = {v:k for k, v in self.relation2id.items()}
+
         self.char2id = {
             "<pad>": 0,
             "<unk>": 1
