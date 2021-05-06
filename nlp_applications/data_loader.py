@@ -671,7 +671,12 @@ class LoaderBaiduDueeV1(object):
                 if "enum_items" in role:
                     role_enum[role["role"]] = role["enum_items"]
 
+        self.id2event = {v: k for k, v in self.event2id.items()}
+        self.id2argument = {v: k for k, v in self.argument_role2id.items()}
+
         train_path = data_path + "\\duee_train.json\\duee_train.json"
+        dev_path = data_path + "\\duee_dev.json\\duee_dev.json"
+        test_path = data_path + "\\duee_test1.json\\duee_test1.json"
 
         self.document = []
         self.char2id = {
@@ -703,10 +708,23 @@ class LoaderBaiduDueeV1(object):
                     sub_arg_role = sub_argument["role"]
                     sub_arg_value = sub_argument["argument"]
 
-                    argument = Argument(sub_arg_value, sub_arg_role, sub_arg_index)
+                    argument = Argument(sub_arg_value, self.argument_role2id[sub_arg_role], sub_arg_role, sub_arg_index)
                     event.add_argument(argument)
                 sub_doc.add_event(event)
             self.document.append(sub_doc)
+
+        test_data = load_json_line_data(test_path)
+        self.test_document = []
+        for i, sub_test_data in enumerate(test_data):
+
+            text = sub_test_data["text"]
+            text_id = []
+
+            for char in text:
+                text_id.append(self.char2id.get(char, self.char2id["$unk$"]))
+            sub_doc = EventDocument(sub_test_data["id"], text, text_id)
+
+            self.test_document.append(sub_doc)
 
 
 class LoaderBaiduDueeFin(object):
