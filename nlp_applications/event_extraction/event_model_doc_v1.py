@@ -134,6 +134,7 @@ class DataIter(object):
 
     def batch_transformer(self, input_batch_data):
         batch_sentences_id = []
+        batch_entity_label_id = []
         max_len = 0
         max_sentence_num = 0
         for data in input_batch_data:
@@ -143,14 +144,19 @@ class DataIter(object):
 
         for data in input_batch_data:
             sub_sentences_id = data["sentences_id"]
+            sub_entity_label_id = data["entity_label"]
             sub_len = len(sub_sentences_id)
             if sub_len < max_sentence_num:
                 sub_sentences_id += [tf.zeros(max_len) for _ in range(max_sentence_num-sub_len)]
+                sub_entity_label_id += [tf.zeros(max_len) for _ in range(max_sentence_num-sub_len)]
             sub_sentences_id = tf.keras.preprocessing.sequence.pad_sequences(sub_sentences_id, padding="post", maxlen=max_len)
+            sub_entity_label_id = tf.keras.preprocessing.sequence.pad_sequences(sub_entity_label_id, padding="post", maxlen=max_len)
             batch_sentences_id.append(sub_sentences_id)
+            batch_entity_label_id.append(sub_entity_label_id)
 
         return {
-            "sentences_id": tf.cast(batch_sentences_id, dtype=tf.int64)
+            "sentences_id": tf.cast(batch_sentences_id, dtype=tf.int64),
+            "entity_labels": batch_entity_label_id
         }
 
     def __iter__(self):
@@ -194,7 +200,7 @@ class EventModelDocV1(tf.keras.Model):
     def __init__(self):
         super(EventModelDocV1, self).__init__()
         self.embed = tf.keras.layers.Embedding(vocab_size, embed_size)
-        self.lstm_layer = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size))
+        self.lstm_layer = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size, return_sequences=True))
         self.event_root = None
 
     def call(self, inputs, training=None, mask=None):
@@ -202,15 +208,18 @@ class EventModelDocV1(tf.keras.Model):
         input_id = self.embed(inputs)
 
         sentence_maxpool = tf.reduce_max(input_id, axis=1)
-        sentence_feature = self.lstm_layer(sentence_maxpool)
+        # sentence_feature = self.lstm_layer(sentence_maxpool)
+        sentence_entity_label = tf.map_fn(lambda x: self.lstm_layer(x), input_id)
 
-        return sentence_feature
+        return sentence_entity_label
 
 emdv1 = EventModelDocV1()
-
+loss_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
 for batch_data in data_iter:
     print("=========================")
+
     out = emdv1(batch_data["sentences_id"])
     print(out.shape)
+    print(loss_func(batch_data["entity_labels"], out))
     break
