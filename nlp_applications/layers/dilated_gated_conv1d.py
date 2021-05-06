@@ -11,6 +11,29 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 
 
+class DilatedGatedConv1d(tf.keras.layers.Layer):
+
+    def __init__(self, dim, dilation_rate=1):
+        super(DilatedGatedConv1d, self).__init__()
+        self.conv1 = tf.keras.layers.Conv1D(dim * 2, 3, padding='same', dilation_rate=dilation_rate)
+        self.dim = dim
+
+    def call(self, inputs, **kwargs):
+        seq, mask = inputs
+        h = self.conv1(seq)
+        def _gate(x):
+            dropout_rate = 0.1
+            s, ih = x
+            g, ih = ih[:, :, :self.dim], ih[:, :, self.dim:]
+            g = K.in_train_phase(K.dropout(g, dropout_rate), g)
+            g = K.sigmoid(g)
+            return g * s + (1 - g) * ih
+
+        seq = _gate([seq, h])
+        seq = seq * mask
+
+        return seq
+
 def dilated_gated_conv1d(seq, mask, dilation_rate=1):
     """膨胀门卷积（残差式）
     """
