@@ -51,8 +51,8 @@ def padding_data(input_batch):
             trigger_start[s] = eid
             trigger_end[e] = eid
 
-            trigger_mask = np.ones(max_len)*-1e30
-            trigger_mask[s:e+1] = 0
+            trigger_mask = np.ones(max_len)*(-1e3)
+            trigger_mask[s:e+1] = 1
             trigger_masks.append(trigger_mask)
 
         event_trigger_start.append(trigger_start)
