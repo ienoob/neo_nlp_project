@@ -430,9 +430,13 @@ class LoaderDuie2Dataset(object):
     def __init__(self, data_path):
         self.schema_path = data_path + "//duie_schema//duie_schema.json"
         self.train_path = data_path + "//duie_train.json//duie_train.json"
+        self.dev_path = data_path + "//duie_dev.json//duie_dev.json"
+        self.test_path = data_path + "//duie_test1.json//duie_test1.json"
 
         schema_data_list = load_json_line_data(self.schema_path)
         train_data_list = load_json_line_data(self.train_path)
+        dev_data_list = load_json_line_data(self.dev_path)
+        test_data_list = load_json_line_data(self.test_path)
 
         self.data_len = 0
         self.entity_max_len = 0
@@ -520,6 +524,17 @@ class LoaderDuie2Dataset(object):
                 continue
             doc = Document(i, train_text, train_text_id, entity_list, relation_list)
             self.documents.append(doc)
+
+        self.test_documents = []
+        for i, test_data in enumerate(test_data_list):
+            test_text = test_data["text"]
+            test_text_id = []
+            for tt in test_text:
+                test_text_id.append(self.char2id.get(tt, 1))
+            entity_list = []
+            relation_list = []
+            doc = Document(i, test_text, test_text_id, entity_list, relation_list)
+            self.test_documents.append(doc)
 
 
 class Argument(object):
