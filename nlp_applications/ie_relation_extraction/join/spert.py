@@ -10,6 +10,7 @@
 
 
 """
+import pickle
 import numpy as np
 import tensorflow as tf
 from nlp_applications.data_loader import LoaderDuie2Dataset, Document
@@ -19,7 +20,7 @@ entity_max_len = 70
 random_choice_num = 100
 random_relation_num = 20
 
-data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取"
+data_path = "D:\\data\\关系抽取\\"
 data_loader = LoaderDuie2Dataset(data_path)
 
 print(len(data_loader.documents))
@@ -88,6 +89,55 @@ def convict_data(input_batch_data):
         "relation_num": tf.reshape(tf.cast(batch_relation_num, dtype=tf.int32), (len(batch_relation_num), 1))
     }
 
+def convict_predict_data(input_batch_data):
+    batch_encodings = []
+    batch_context_mask = []
+    batch_entity_span = []
+    batch_entity_masks = []
+    batch_entity_sizes = []
+    batch_entity_num = []
+    batch_entity_start_end = []
+
+    max_len = 0
+    for data in input_batch_data:
+        batch_encodings.append(data["encoding"])
+        batch_context_mask.append(data["context_mask"])
+        batch_entity_num.append(len(data["entity_span"]))
+
+
+        max_len = max(max_len, len(data["encoding"]))
+
+    for data in input_batch_data:
+
+        for entity_mask in data["entity_mask"]:
+            batch_entity_masks.append(entity_mask)
+        for entity_size in data["entity_size"]:
+            batch_entity_sizes.append(entity_size)
+
+        for entity_s in data["entity_span"]:
+            batch_entity_span.append(entity_s)
+
+        for entity_se in data["entity_start_end"]:
+            batch_entity_start_end.append(entity_se)
+
+    batch_encodings = tf.keras.preprocessing.sequence.pad_sequences(batch_encodings, padding="post")
+    batch_encodings = tf.cast(batch_encodings, dtype=tf.int32)
+    batch_context_mask = tf.keras.preprocessing.sequence.pad_sequences(batch_context_mask, padding="post")
+    batch_context_mask = tf.cast(batch_context_mask, dtype=tf.int32)
+    batch_entity_masks = tf.keras.preprocessing.sequence.pad_sequences(batch_entity_masks, padding="post")
+    batch_entity_masks = tf.cast(batch_entity_masks, dtype=tf.int32)
+
+    return {
+        "encodings": batch_encodings,
+        "context_masks": batch_context_mask,
+        "entity_spans": tf.reshape(tf.cast(batch_entity_span, dtype=tf.int32), (len(batch_entity_span), 1)),
+        "entity_masks": batch_entity_masks,
+        "entity_sizes": tf.cast(batch_entity_sizes, dtype=tf.int32),
+        "entity_num": tf.reshape(tf.cast(batch_entity_num, dtype=tf.int32), (len(batch_entity_num), 1)),
+        "entity_start_end": batch_entity_start_end,
+        "max_len": max_len
+    }
+
 
 def sample_single_data(doc: Document):
     text_ids = doc.text_id
@@ -115,7 +165,7 @@ def sample_single_data(doc: Document):
             if (j, k) in entity_loc_set:
                 continue
             if k-j > entity_max_len:
-                continue
+                break
             entity_mask = [1 if ind >= j and ind < k else 0 for ind in range(text_len)]
             negative_entity_data.append((entity_mask, 0, k - j))
             # sub_entity_masks.append(entity_mask)
@@ -191,14 +241,57 @@ def sample_single_data(doc: Document):
     }
 
 
+def sample_single_predict_data(doc: Document):
+    text_ids = doc.text_id
+    text_len = len(text_ids)
+
+    entity_span = []
+    sub_entity_masks = []
+    sub_entity_size = []
+    sub_entity_start_end = []
+
+    for j in range(text_len - 1):
+        for k in range(j + 1, text_len):
+            if k - j > entity_max_len:
+                break
+            entity_mask = [1 if ind >= j and ind < k else 0 for ind in range(text_len)]
+            sub_entity_masks.append(entity_mask)
+            entity_span.append(0)
+            sub_entity_start_end.append((j, k))
+            sub_entity_size.append(k - j)
+
+    return {
+        "encoding": text_ids,
+        "context_mask": [1 for _ in text_ids],
+        "entity_span": entity_span,
+        "entity_mask": sub_entity_masks,
+        "entity_size": sub_entity_size,
+        "entity_start_end": sub_entity_start_end
+    }
+
+
 def get_sample_data(input_batch_num):
 
-    batch_data = []
+    inner_batch_data = []
     for doc in data_loader.documents:
-        batch_data.append(sample_single_data(doc))
-        if len(batch_data)==input_batch_num:
-            yield convict_data(batch_data)
-            batch_data = []
+        inner_batch_data.append(sample_single_data(doc))
+        if len(inner_batch_data) == input_batch_num:
+            yield convict_data(inner_batch_data)
+            inner_batch_data = []
+    if inner_batch_data:
+        yield convict_data(inner_batch_data)
+
+
+def get_test_sample_data(input_batch_num):
+
+    inner_batch_data = []
+    for doc in data_loader.test_documents:
+        inner_batch_data.append(sample_single_predict_data(doc))
+        if len(inner_batch_data) == input_batch_num:
+            yield convict_predict_data(inner_batch_data)
+            inner_batch_data = []
+    if inner_batch_data:
+        yield convict_predict_data(inner_batch_data)
 
 
 char_size = len(data_loader.char2id)
@@ -239,10 +332,6 @@ def batch_index(first_list, index_list):
     return tf.cast(new_data, dtype=tf.float32)
 
 
-def new_func(first_list, index_list):
-    n_shape = first_list.shape[1]*2
-    target_tensor = tf.reshape(tf.gather(first_list, index_list), (n_shape,))
-    return target_tensor
 
 def build_entity_feature(input_embed, entity_mask, input_size: tf.Tensor):
     inner_batch_num = input_embed.shape[0]
@@ -265,25 +354,39 @@ def build_relation_feature(input_embed, entity_spans_pool, input_relation_entity
     input_num = tf.reshape(input_num, (inner_batch_num, ))
     relation_embed_feature = tf.repeat(input_embed, input_num, axis=0)
 
-    relation_entity_feature = []
-    relation_size_feature = []
+    def new_func(index_list):
+        n_shape = entity_spans_pool.shape[1] * 2
+        target_tensor = tf.reshape(tf.gather(entity_spans_pool, index_list), (n_shape,))
+
+        return target_tensor
+
+    def new_func2(index_list):
+        n_shape = size_embeddings.shape[1] * 2
+        target_tensor = tf.reshape(tf.gather(size_embeddings, index_list), (n_shape,))
+        return target_tensor
+
+    relation_entity_feature = tf.map_fn(new_func, input_relation_entity, dtype=tf.float32)
+    relation_size_feature = tf.map_fn(new_func2, input_relation_entity, dtype=tf.float32)
+    # relation_entity_feature = tf.cast(relation_entity_feature, dtype=tf.float32)
+    # relation_size_feature = tf.cast(relation_size_feature, dtype=tf.float32)
+
 
     # relation_count = input_relation_entity.shape[0]
 
-    for iv in range(relation_count):
-        ind = input_relation_entity[iv]
-        # relation_embed_feature.append(input_embed[i])
-        relation_entity_pair = new_func(entity_spans_pool, ind)
-        relation_entity_feature.append(relation_entity_pair)
-        relation_size_pair = new_func(size_embeddings, ind)
-        relation_size_feature.append(relation_size_pair)
+    # for iv in range(relation_count):
+    #     ind = input_relation_entity[iv]
+    #     # relation_embed_feature.append(input_embed[i])
+    #     relation_entity_pair = new_func(entity_spans_pool, ind)
+    #     relation_entity_feature.append(relation_entity_pair)
+    #     relation_size_pair = new_func(size_embeddings, ind)
+    #     relation_size_feature.append(relation_size_pair)
 
     m = tf.cast(tf.expand_dims(rel_mask, -1) == 0, tf.float32) * (-1e1)
     relation_spans_pool = m + relation_embed_feature
     relation_embed = tf.reduce_max(relation_spans_pool, axis=1)
-    relation_entity_featurev = tf.stack(relation_entity_feature)
-    relation_size_featurev = tf.stack(relation_size_feature)
-    relation_feature = tf.concat([relation_embed, relation_entity_featurev, relation_size_featurev], axis=1)
+    # relation_entity_featurev = tf.stack(relation_entity_feature)
+    # relation_size_featurev = tf.stack(relation_size_feature)
+    relation_feature = tf.concat([relation_embed, relation_entity_feature, relation_size_feature], axis=1)
 
     return relation_feature
 
@@ -322,9 +425,59 @@ class SpERt(tf.keras.models.Model):
 
         return entity_clf, rel_clf
 
+    def filter_span(self, input_entity_logits, input_entity_start_end, input_max_len):
+        entity_list = tf.argmax(input_entity_logits, axis=-1)
 
-    def predict(self):
-        pass
+        entity_span_list = []
+        for i, ix in enumerate(entity_list):
+            entity_span_list.append(i)
+            # if ix != tf.cast(0, dtype=tf.int64):
+            #     entity_span_list.append(i)
+        entity_span_list = entity_span_list[:10]
+        relations_entity = []
+        relation_masks = []
+        relations_num = 0
+        for i in entity_span_list:
+            ss, se = input_entity_start_end[i]
+            for j in entity_span_list:
+                os, oe = input_entity_start_end[j]
+                if i == j:
+                    continue
+                start = se if se > os else oe
+                end = os if se > os else ss
+                if start > end:
+                    start, end = end, start
+
+                relation_maskv = [1 if ind >= start and ind < end else 0 for ind in range(input_max_len)]
+                relation_masks.append(relation_maskv)
+                relations_entity.append([i, j])
+                relations_num += 1
+
+        return tf.cast(relations_entity, dtype=tf.int64), tf.cast(relation_masks, dtype=tf.int64), tf.cast([[relations_num]], tf.int64)
+
+    def predict(self, text_ids, text_contexts, entity_masks, entity_sizes, entity_nums, input_entity_start_end, input_max_len):
+        h = self.embed(text_ids)
+        size_embeddings = self.size_embed(entity_sizes)
+        entity_spans_pool = build_entity_feature(h, entity_masks, entity_nums)
+        entity_repr = tf.concat([entity_spans_pool, size_embeddings], axis=1)
+        entity_repr = self.dropout(entity_repr)
+        entity_clf = self.entity_classifier(entity_repr)
+
+        entity_list = tf.argmax(entity_clf, axis=-1)
+        entity_list = entity_list.numpy()
+
+        relations_entity, relation_mask, relation_nums = self.filter_span(entity_clf, input_entity_start_end, input_max_len)
+        if relations_entity.shape[0]:
+            relation_feature = build_relation_feature(h, entity_spans_pool, relations_entity, size_embeddings, relation_mask,
+                                                      relation_nums)
+            rel_clf = self.rel_classifier(relation_feature)
+            rel_clf_argmax = tf.argmax(rel_clf, axis=-1)
+
+            rel_res = [(relations_entity[i].numpy()[0], relations_entity[i].numpy()[1], label) for i, label in enumerate(rel_clf_argmax.numpy())]
+            rel_res = [(input_entity_start_end[si], entity_list[si], input_entity_start_end[oi], entity_list[oi], p) for si, oi, p in rel_res if p]
+            return rel_res
+        else:
+            return []
 
 
 
@@ -347,7 +500,7 @@ loss_f2 = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 # print(loss(sample_relation_label, sample_relation_res))
 
 
-@tf.function
+@tf.function(experimental_relax_shapes=True)
 def train_step(encodings, context_masks, entity_masks, entity_sizes, entity_num, relation_entity, rel_masks, relation_num, entity_spans, relations):
 
     with tf.GradientTape() as tape:
@@ -369,6 +522,8 @@ def train_step(encodings, context_masks, entity_masks, entity_sizes, entity_num,
 
     return loss_v
 
+model_path = "D:\\tmp\spert_model\\check"
+
 epoch = 100
 for e in range(epoch):
     batch_data_iter = get_sample_data(batch_num)
@@ -384,9 +539,50 @@ for e in range(epoch):
                            batch_data["entity_spans"],
                            batch_data["relations"])
 
-        if i % 10 == 0:
+        if i % 100 == 0:
             print("epoch {0} batch {1} loss value is {2}".format(e, i, lossv))
+            spert.save_weights(model_path, save_format='tf')
 
+
+spert.load_weights(model_path)
+batch_data_iter = get_test_sample_data(1)
+submit_res = []
+for i, batch_data in enumerate(batch_data_iter):
+    pres = spert.predict(batch_data["encodings"],
+                               batch_data["context_masks"],
+                               batch_data["entity_masks"],
+                               batch_data["entity_sizes"],
+                               batch_data["entity_num"],
+                               batch_data["entity_start_end"],
+                               batch_data["max_len"])
+    doc = data_loader.test_documents[i]
+    i_text = doc.text
+    spo_list = []
+    for sop in pres:
+        sub_i, sub_j = sop[0]
+        sub_type = sop[1]
+        obj_i, obj_j = sop[2]
+        obj_type = sop[3]
+        pre_type = sop[4]
+        spo_list.append({
+            "predicate": data_loader.id2relation[pre_type],
+            "subject": i_text[sub_i:sub_j],
+            "subject_type": data_loader.id2entity[sub_type],
+            "object": {
+                "@value": i_text[obj_i:obj_j],
+            },
+            "object_type": {
+                "@value": data_loader.id2entity[obj_type],
+            }
+        })
+
+    single_spo = {
+        "text": i_text,
+        "spo_list": spo_list
+    }
+    print(single_spo)
+    submit_res.append(single_spo)
+    break
 
 
 

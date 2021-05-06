@@ -430,9 +430,13 @@ class LoaderDuie2Dataset(object):
     def __init__(self, data_path):
         self.schema_path = data_path + "//duie_schema//duie_schema.json"
         self.train_path = data_path + "//duie_train.json//duie_train.json"
+        self.dev_path = data_path + "//duie_dev.json//duie_dev.json"
+        self.test_path = data_path + "//duie_test1.json//duie_test1.json"
 
         schema_data_list = load_json_line_data(self.schema_path)
         train_data_list = load_json_line_data(self.train_path)
+        dev_data_list = load_json_line_data(self.dev_path)
+        test_data_list = load_json_line_data(self.test_path)
 
         self.data_len = 0
         self.entity_max_len = 0
@@ -459,6 +463,9 @@ class LoaderDuie2Dataset(object):
 
             if object not in self.entity2id:
                 self.entity2id[object] = len(self.entity2id)
+
+        self.id2entity = {v:k for k, v in self.entity2id.items()}
+        self.id2relation = {v:k for k, v in self.relation2id.items()}
 
         self.char2id = {
             "<pad>": 0,
@@ -520,6 +527,17 @@ class LoaderDuie2Dataset(object):
                 continue
             doc = Document(i, train_text, train_text_id, entity_list, relation_list)
             self.documents.append(doc)
+
+        self.test_documents = []
+        for i, test_data in enumerate(test_data_list):
+            test_text = test_data["text"]
+            test_text_id = []
+            for tt in test_text:
+                test_text_id.append(self.char2id.get(tt, 1))
+            entity_list = []
+            relation_list = []
+            doc = Document(i, test_text, test_text_id, entity_list, relation_list)
+            self.test_documents.append(doc)
 
 
 class Argument(object):
@@ -653,7 +671,12 @@ class LoaderBaiduDueeV1(object):
                 if "enum_items" in role:
                     role_enum[role["role"]] = role["enum_items"]
 
+        self.id2event = {v: k for k, v in self.event2id.items()}
+        self.id2argument = {v: k for k, v in self.argument_role2id.items()}
+
         train_path = data_path + "\\duee_train.json\\duee_train.json"
+        dev_path = data_path + "\\duee_dev.json\\duee_dev.json"
+        test_path = data_path + "\\duee_test1.json\\duee_test1.json"
 
         self.document = []
         self.char2id = {
@@ -685,10 +708,23 @@ class LoaderBaiduDueeV1(object):
                     sub_arg_role = sub_argument["role"]
                     sub_arg_value = sub_argument["argument"]
 
-                    argument = Argument(sub_arg_value, sub_arg_role, sub_arg_index)
+                    argument = Argument(sub_arg_value, self.argument_role2id[sub_arg_role], sub_arg_role, sub_arg_index)
                     event.add_argument(argument)
                 sub_doc.add_event(event)
             self.document.append(sub_doc)
+
+        test_data = load_json_line_data(test_path)
+        self.test_document = []
+        for i, sub_test_data in enumerate(test_data):
+
+            text = sub_test_data["text"]
+            text_id = []
+
+            for char in text:
+                text_id.append(self.char2id.get(char, self.char2id["$unk$"]))
+            sub_doc = EventDocument(sub_test_data["id"], text, text_id)
+
+            self.test_document.append(sub_doc)
 
 
 class LoaderBaiduDueeFin(object):

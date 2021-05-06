@@ -51,8 +51,8 @@ def padding_data(input_batch):
             trigger_start[s] = eid
             trigger_end[e] = eid
 
-            trigger_mask = np.ones(max_len)*-1e30
-            trigger_mask[s:e+1] = 0
+            trigger_mask = np.ones(max_len)*(-1e3)
+            trigger_mask[s:e+1] = 1
             trigger_masks.append(trigger_mask)
 
         event_trigger_start.append(trigger_start)
@@ -80,6 +80,16 @@ def padding_data(input_batch):
     }
 
 
+def padding_test_data(input_batch):
+    encodings = []
+    for bd in input_batch:
+        encodings.append(bd["encoding"])
+
+    return {
+        "encoding": tf.keras.preprocessing.sequence.pad_sequences(encodings, padding="post")
+    }
+
+
 def get_batch_data(input_batch_num: int):
     batch_list = []
     for doc in bd_data_loader.document:
@@ -88,6 +98,20 @@ def get_batch_data(input_batch_num: int):
         if len(batch_list) == input_batch_num:
             yield padding_data(batch_list)
             batch_list = []
+    if batch_list:
+        yield padding_data(batch_list)
+
+
+def get_test_batch_data(input_batch_num: int):
+    batch_list = []
+    for doc in bd_data_loader.test_document:
+        deal_data = sample_single_test_doc(doc)
+        batch_list.append(deal_data)
+        if len(batch_list) == input_batch_num:
+            yield padding_test_data(batch_list)
+            batch_list = []
+    if batch_list:
+        yield padding_test_data(batch_list)
 
 
 def sample_single_doc(input_doc: EventDocument):
@@ -116,6 +140,13 @@ def sample_single_doc(input_doc: EventDocument):
         "event_label_id": event_label_id,
         "eval_event_data": eval_event_data
     }
+
+
+def sample_single_test_doc(input_doc: EventDocument):
+    text_id = input_doc.text_id
+
+    return {
+        "encoding": text_id}
 
 
 # class WarmUp(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -163,6 +194,7 @@ boundaries = [100000, 110000]
 values = [0.001, 0.0001, 0.00001]
 
 lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(boundaries, values)
+
 
 def repeat_data(input_feature, input_event_label_ids):
     inner_batch_num = input_feature.shape[0]
@@ -361,7 +393,7 @@ def eval_metric(real_data, predict_data):
 
 
 epoch = 100
-
+um_model_path = "D:\\tmp\event_model_v1\\event_mv1"
 for ep in range(epoch):
 
     for batch, data in enumerate(get_batch_data(batch_num)):
@@ -374,7 +406,31 @@ for ep in range(epoch):
                                 data["event_argument_end"]
                                 )
 
-        if batch % 10 == 0:
+        if batch % 100 == 0:
             print("epoch {0} batch {1} loss is {2}".format(ep, batch, loss_value))
+            um_model.save_weights(um_model_path, save_format='tf')
             # predict_res = um_model.predict(data["encoding"])
             # eval_metric(data["eval_event_data"], predict_res)
+
+submit_res = []
+sub_ind = 0
+for batch, data in enumerate(get_test_batch_data(batch_num)):
+    predict_res = um_model.predict(data["encoding"])
+
+    for single_data in predict_res:
+        doc = bd_data_loader.test_document[sub_ind]
+        doc_text = doc.text
+        single_res = {
+            "id": doc.id,
+            "event_list": []
+        }
+
+        for event in single_data:
+            event_res = {
+                "event_type": bd_data_loader.id2event[event["event_id"]],
+                "arguments": [{"argument": bd_data_loader.id2argument[e_arg[2]], "role": doc_text[e_arg[0]:e_arg[1]+1]} for e_arg in event["arguments"]]
+            }
+            single_res["event_list"].append(event_res)
+
+        sub_ind += 1
+        submit_res.append(single_res)
