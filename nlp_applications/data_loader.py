@@ -744,14 +744,19 @@ class LoaderBaiduDueeFin(object):
         self.argument_role2id = {
             "$unk$": 0
         }
+        self.event2argument = {0: dict()}
         role_enum = dict()
         for schema in schema_data:
             event_type = schema["event_type"]
             if event_type not in self.event2id:
                 self.event2id[event_type] = len(self.event2id)
+            self.event2argument.setdefault(self.event2id[event_type], dict())
+
             for role in schema["role_list"]:
                 if role["role"] not in self.argument_role2id:
                     self.argument_role2id[role["role"]] = len(self.argument_role2id)
+                self.event2argument[self.event2id[event_type]][self.argument_role2id[role["role"]]] = len(self.event2argument[self.event2id[event_type]])
+
                 if "enum_items" in role:
                     role_enum[role["role"]] = role["enum_items"]
         self.id2event = {v:k for k,v in self.event2id.items()}
