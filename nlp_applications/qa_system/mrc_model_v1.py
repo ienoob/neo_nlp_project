@@ -12,3 +12,5 @@ from nlp_applications.data_loader import LoaderDuReaderChecklist
 
 train_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：机器阅读理解任务"
 data_loader = LoaderDuReaderChecklist(train_path)
+
+
