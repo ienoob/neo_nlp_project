@@ -155,9 +155,7 @@ def max_sub_sequence(seq1, seq2):
 print(max_sub_sequence("abc", "yagbghachje"))
 
 
-
 charater_list = [".", "+"]
-
 
 
 def single_pattern(input_str):
@@ -182,17 +180,27 @@ class PatternModel(object):
         self.core_list = []
         self.core_pattern = []
         self.clf = LogisticRegression(solver='lbfgs')
+        self.max_len = 0
+        self.train_text = []
+        self.train_label = []
+        self.n_pattern_list = []
 
-    def negative_choice(self, input_text, positive_span=list()):
+    def negative_choice(self, input_text, positive_span=tuple()):
         dlen = len(input_text)
+        si, ei = positive_span
+
+        def match_span(a1, a2, b1, b2):
+            if a1 > b2 or b1 > a2:
+                return False
+            return True
         while True:
             i = np.random.randint(0, dlen)
             j = np.random.randint(0, dlen)
             s = min(i, j)
-            e = max(i, j)
-            if input_text[s:e+1] in positive_span or input_text[s:e+1].strip() == "":
+            e = max(i, j)+1
+            if match_span(s, e, si, ei) or input_text[s:e].strip() == "":
                 continue
-            return input_text[s:e+1]
+            return input_text[s:e]
 
     def generate_feature(self, input_list):
         features = []
@@ -213,6 +221,7 @@ class PatternModel(object):
             features.append(feature)
         return features
 
+    # 分类器方式
     def train_core_model(self, input_positive_list, input_negative_list):
         p_feature = self.generate_feature(input_positive_list)
         n_feature = self.generate_feature(input_negative_list)
@@ -231,10 +240,66 @@ class PatternModel(object):
         core_data = input_label_data[1]
         end_context = input_text[end_indx:]
 
+    def build_pattern_tree(self, input_pattern_start, input_pattern_end, input_match_list, start_len, end_len):
+        filter_char = [")", "*", "+", "?", "(", "-"]
+        input_pattern_start_n = []
+        for p in input_pattern_start:
+            if p in filter_char:
+                p = "\\{}".format(p)
+            input_pattern_start_n.append(p)
+        input_pattern_end_n = []
+        for p in input_pattern_end:
+            if p in filter_char:
+                p = "\\{}".format(p)
+            input_pattern_end_n.append(p)
+        pattern = r"{0}(.+?){1}".format("".join(input_pattern_start_n), "".join(input_pattern_end_n))
+        match_count = 0
+        for text_i in input_match_list:
+            match_res = re.findall(pattern, self.train_text[text_i])
+            if len(match_res) == 1 and match_res[0] == self.train_label[text_i][1]:
+                match_count += 1
+        if match_count == len(input_match_list):
+            self.n_pattern_list.append((pattern, input_match_list))
+        else:
+            pattern_statis = dict()
+            for text_i in input_match_list:
+                start_i = self.train_label[text_i][0]
+                end_i = start_i + len(self.train_label[text_i][1])
+                if start_i-start_len-1 < 0 and end_i+end_len >= len(self.train_text[text_i]):
+                    continue
+                if start_i-start_len-1 < 0:
+                    p_last = input_pattern_end + self.train_text[text_i][end_i + end_len]
+                    pattern_statis.setdefault((input_pattern_start, p_last), [])
+                    pattern_statis[(input_pattern_start, p_last)].append(text_i)
+
+                elif end_i+end_len >= len(self.train_text[text_i]):
+                    p_first = self.train_text[text_i][start_i-start_len-1] + input_pattern_start
+                    pattern_statis.setdefault((p_first, input_pattern_end), [])
+                    pattern_statis[(p_first, input_pattern_end)].append(text_i)
+                else:
+                    if start_len == end_len:
+                        p_first = self.train_text[text_i][start_i-start_len-1] + input_pattern_start
+                        pattern_statis.setdefault((p_first, input_pattern_end), [])
+                        pattern_statis[(p_first, input_pattern_end)].append(text_i)
+                    else:
+                        p_last = input_pattern_end + self.train_text[text_i][end_i + end_len]
+                        pattern_statis.setdefault((input_pattern_start, p_last), [])
+                        pattern_statis[(input_pattern_start, p_last)].append(text_i)
+
+            for k, v in pattern_statis.items():
+                sub_start, sub_end = k
+                if len(sub_start) > len(input_pattern_start):
+                    self.build_pattern_tree(sub_start, sub_end, v, start_len+1, end_len)
+                else:
+                    self.build_pattern_tree(sub_start, sub_end, v, start_len, end_len+1)
 
     def fit(self, input_feature_data, label_datas):
+        filter_char = [")", "*", "+", "?", "(", "-"]
         pattern_statis = dict()
+        # 负样本
         negative_span = []
+        self.train_text = input_feature_data
+        self.train_label = label_datas
         for i, text in enumerate(input_feature_data):
             label_data = label_datas[i]
             start_indx = label_data[0]
@@ -242,22 +307,38 @@ class PatternModel(object):
             start_context = text[:start_indx]
             core_data = label_data[1]
             self.core_list.append(core_data)
-            negative_span.append(self.negative_choice(text, [core_data]))
+            negative_span.append(self.negative_choice(text, (start_indx, end_indx)))
             end_context = text[end_indx:]
 
-            start_p = start_context[-1] if len(start_context) else "$"
+            start_p = start_context[-1] if len(start_context) else "^"
             end_p = end_context[0] if len(end_context) else "$"
 
-            pattern_statis.setdefault((start_p, end_p), 0)
-            pattern_statis[(start_p, end_p)] += 1
+            pattern_statis.setdefault((start_p, end_p), [])
+            pattern_statis[(start_p, end_p)].append(i)
+
+            self.max_len = max(self.max_len, len(core_data))
 
         self.train_core_model(self.core_list, negative_span)
+        for (start_p, end_p), v in pattern_statis.items():
+            if start_p == "^" and end_p == "$":
+                continue
+            if start_p == "^":
+                self.build_pattern_tree(start_p, end_p, v, 0, 1)
+            elif end_p == "$":
+                self.build_pattern_tree(start_p, end_p, v, 1, 0)
+            else:
+                self.build_pattern_tree(start_p, end_p, v, 1, 1)
 
-        pattern_list = [(p[0], p[1], c) for p, c in pattern_statis.items()]
+        # pattern_list_value = [(p, len(c)) for p, c in self.n_pattern_list]
+        # pattern_list_value.sort(key=lambda x: x[1], reverse=True)
+        # print("pattern_num:", len(pattern_list_value))
+
+        pattern_list = [(p[0], p[1], len(c)) for p, c in pattern_statis.items()]
+
         pattern_list.sort()
         pattern_list_value = []
         last = None
-        filter_char = [")", "*", "+", "?", "(", "-"]
+
         for p1, p2, c in pattern_list:
             if p1 in filter_char:
                 p1 = "\\{}".format(p1)
@@ -273,13 +354,14 @@ class PatternModel(object):
                 last = (p1, [p2], c)
         if last:
             pattern_list_value.append(last)
-        pattern_list_value.sort(key=lambda x: x[2], reverse=True)
 
-        for p1, p2, _ in (pattern_list_value):
+        pattern_list_value.sort(key=lambda x: x[2], reverse=True)
+        for p1, p2, _ in pattern_list_value:
             pattern = r"{0}(.+?)[{1}]".format(p1, "".join(p2))
             self.pattern_list.append(pattern)
-
-        self.core_pattern = [single_pattern(span) for span in self.core_list]
+        # self.pattern_list = [p for p, _ in pattern_list_value]
+        #
+        # self.core_pattern = [single_pattern(span) for span in self.core_list]
 
     def calculate(self, input_str):
         score = 0.0
@@ -297,29 +379,40 @@ class PatternModel(object):
         predict_res = []
         for text in input_text:
             extract = tuple()
-            extract_infos = []
+            extract_infos = dict()
             for pt in self.pattern_list:
                 try:
-                    g = re.search(pt, text)
-                    if g:
-                        e_span = g.group(1)
-                        if e_span.strip():
-                        # e_span_pattern = single_pattern(e_span)
-
-                            extract_infos.append((g.start(1), e_span, 0))
+                    gf = re.finditer(pt, text)
+                    for gfi in gf:
+                        e_span = gfi.group(1).strip()
+                        if e_span == "":
+                            continue
+                        if len(e_span) > self.max_len:
+                            continue
+                            # e_span_pattern = single_pattern(e_span)
+                        if (gfi.start(1), e_span) not in extract_infos:
+                            extract_infos[(gfi.start(1), e_span)] = len(extract_infos)
+                    # g = re.search(pt, text)
+                    # if g:
+                    #     e_span = g.group(1)
+                    #     if e_span.strip():
+                    #     # e_span_pattern = single_pattern(e_span)
+                    #
+                    #         extract_infos.append((g.start(1), e_span, 0))
                 except Exception as e:
                     print(text, pt)
                     raise Exception
 
             # extract_infos.sort(key=lambda x: x[2], reverse=True)
+            extract_infos_reverse = {v: k for k, v in extract_infos.items()}
             if extract_infos:
                 inx = 0
-                # extract_span_list = [e_info[1] for e_info in extract_infos]
-                # extract_span_feature = self.generate_feature(extract_span_list)
-                # extract_span_res = self.clf.predict_proba(extract_span_feature)
-                # inx = np.argmax(extract_span_res[:,1])
+                extract_span_list = [e_info[1] for e_info in extract_infos]
+                extract_span_feature = self.generate_feature(extract_span_list)
+                extract_span_res = self.clf.predict_proba(extract_span_feature)
+                inx = np.argmax(extract_span_res[:,1])
 
-                extract = (extract_infos[inx][0], extract_infos[inx][1])
+                extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
             predict_res.append(extract)
 
         return predict_res
@@ -359,8 +452,10 @@ for schema in schema_data:
     event_type = schema["event_type"]
     for role in schema["role_list"]:
         role_value = role["role"]
+
         test_train = sample_data(event_type, role_value, train_data)
         test_eval = sample_data(event_type, role_value, eval_data)
+        print("event ", event_type, " start, role ", role_value, " start, train data, ", len(test_train))
         if len(test_train) == 0:
             continue
         test_train_feature = [d[0] for d in test_train]
