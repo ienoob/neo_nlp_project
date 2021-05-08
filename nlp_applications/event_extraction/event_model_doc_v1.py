@@ -9,9 +9,8 @@
 """
 
 import tensorflow as tf
-from typing import List, Callable
-import numpy as np
 from nlp_applications.data_loader import LoaderBaiduDueeFin, EventDocument, Event, Argument
+from nlp_applications.ner.evaluation import extract_entity
 
 sample_path = "D:\data\\篇章级事件抽取\\"
 bd_data_loader = LoaderBaiduDueeFin(sample_path)
@@ -73,6 +72,8 @@ class DataIter(object):
                 continue
             self.entity_label2id[e_label+"_B"] = len(self.entity_label2id)
             self.entity_label2id[e_label + "_I"] = len(self.entity_label2id)
+
+        self.id2entity_label = {v: k for k, v in self.entity_label2id.items()}
 
     def _search_index(self, target_word, input_sentence_list):
         out_index = (-1, -1)
@@ -256,6 +257,7 @@ class DataIter(object):
 
 data_iter = DataIter(bd_data_loader, 2)
 entity_class_num = len(data_iter.entity_label2id)
+id2entity_label = data_iter.id2entity_label
 
 
 print(data_iter.max_len, "hello")
@@ -290,12 +292,12 @@ class EventModelDocV1(tf.keras.Model):
         # self.event_root = [EventTree(len(event2argument[i])) for i in range(event_class_num)]
 
     def call(self, inputs, entity_mask=None, entity_loc=None, event_id=None, event_argument=None, training=None, mask=None):
-        batch_num = inputs.shape[0]
+        i_batch_num = inputs.shape[0]
         input_id = self.embed(inputs)
 
         sentence_maxpool = tf.reduce_max(input_id, axis=1)
         sentence_feature = self.event_lstm_layer(sentence_maxpool)
-        sentence_feature = tf.reshape(sentence_feature, (batch_num, -1))
+        sentence_feature = tf.reshape(sentence_feature, (i_batch_num, -1))
         sentence_entity_feature = tf.map_fn(lambda x: self.entity_lstm_layer(x), input_id, dtype=tf.float32)
         sentence_entity_label = self.entity_output(sentence_entity_feature)
         event_label = self.event_classifier(sentence_feature)
@@ -303,7 +305,7 @@ class EventModelDocV1(tf.keras.Model):
         event_embed = self.event_embed(event_id)
 
         batch_event_argument_feature = []
-        for batch_id in range(batch_num):
+        for batch_id in range(i_batch_num):
             sentence_value = input_id[batch_id]
             entity_mask_value = entity_mask[batch_id]
             entity_mask_value = tf.expand_dims(entity_mask_value, axis=-1)
@@ -339,15 +341,22 @@ class EventModelDocV1(tf.keras.Model):
               workers=1,
               use_multiprocessing=False):
 
-        batch_num = inputs.shape[0]
+        i_batch_num = inputs.shape[0]
         input_id = self.embed(inputs)
 
         sentence_maxpool = tf.reduce_max(input_id, axis=1)
         sentence_feature = self.event_lstm_layer(sentence_maxpool)
-        sentence_feature = tf.reshape(sentence_feature, (batch_num, -1))
+        sentence_feature = tf.reshape(sentence_feature, (i_batch_num, -1))
         sentence_entity_feature = tf.map_fn(lambda x: self.entity_lstm_layer(x), input_id, dtype=tf.float32)
         sentence_entity_label = self.entity_output(sentence_entity_feature)
         event_label = self.event_classifier(sentence_feature)
+
+        batch_res = list()
+        for b in range(i_batch_num):
+            sentence_entity_label = tf.argmax(sentence_entity_label, axis=-1)
+            for sentence_inner_label in sentence_entity_label:
+                sentence_inner_label = sentence_inner_label.numpy()
+
 
 
 emdv1 = EventModelDocV1()
@@ -374,6 +383,7 @@ def train_step(input_sentences, input_entity_label, input_event_type, input_enti
     return lossv
 
 
+model_path = "D:\\tmp\event_model_doc_v1\\model"
 epoch = 10
 for e in range(epoch):
 
@@ -384,5 +394,6 @@ for e in range(epoch):
 
         if batch_i % 100 == 0:
             print("epoch {0} batch {1} loss is {2}".format(e, batch_i, loss_value))
+            emdv1.save_weights(model_path, save_format='tf')
     break
 

@@ -259,6 +259,10 @@ class Document(object):
         self._relation_list = input_relation_list
 
     @property
+    def raw_text(self):
+        return self._raw_text
+
+    @property
     def text_id(self):
         return self._text_id
 

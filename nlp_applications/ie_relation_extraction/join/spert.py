@@ -524,29 +524,30 @@ def train_step(encodings, context_masks, entity_masks, entity_sizes, entity_num,
 
 model_path = "D:\\tmp\spert_model\\check"
 
-epoch = 100
-for e in range(epoch):
-    batch_data_iter = get_sample_data(batch_num)
-    for i, batch_data in enumerate(batch_data_iter):
-        lossv = train_step(batch_data["encodings"],
-                           batch_data["context_masks"],
-                           batch_data["entity_masks"],
-                           batch_data["entity_sizes"],
-                           batch_data["entity_num"],
-                           batch_data["relation_entity"],
-                           batch_data["rel_masks"],
-                           batch_data["relation_num"],
-                           batch_data["entity_spans"],
-                           batch_data["relations"])
-
-        if i % 100 == 0:
-            print("epoch {0} batch {1} loss value is {2}".format(e, i, lossv))
-            spert.save_weights(model_path, save_format='tf')
+# epoch = 100
+# for e in range(epoch):
+#     batch_data_iter = get_sample_data(batch_num)
+#     for i, batch_data in enumerate(batch_data_iter):
+#         lossv = train_step(batch_data["encodings"],
+#                            batch_data["context_masks"],
+#                            batch_data["entity_masks"],
+#                            batch_data["entity_sizes"],
+#                            batch_data["entity_num"],
+#                            batch_data["relation_entity"],
+#                            batch_data["rel_masks"],
+#                            batch_data["relation_num"],
+#                            batch_data["entity_spans"],
+#                            batch_data["relations"])
+#
+#         if i % 100 == 0:
+#             print("epoch {0} batch {1} loss value is {2}".format(e, i, lossv))
+#             spert.save_weights(model_path, save_format='tf')
 
 
 spert.load_weights(model_path)
 batch_data_iter = get_test_sample_data(1)
 submit_res = []
+batch_i = 0
 for i, batch_data in enumerate(batch_data_iter):
     pres = spert.predict(batch_data["encodings"],
                                batch_data["context_masks"],
@@ -555,34 +556,33 @@ for i, batch_data in enumerate(batch_data_iter):
                                batch_data["entity_num"],
                                batch_data["entity_start_end"],
                                batch_data["max_len"])
-    doc = data_loader.test_documents[i]
-    i_text = doc.text
-    spo_list = []
-    for sop in pres:
-        sub_i, sub_j = sop[0]
-        sub_type = sop[1]
-        obj_i, obj_j = sop[2]
-        obj_type = sop[3]
-        pre_type = sop[4]
-        spo_list.append({
-            "predicate": data_loader.id2relation[pre_type],
-            "subject": i_text[sub_i:sub_j],
-            "subject_type": data_loader.id2entity[sub_type],
-            "object": {
-                "@value": i_text[obj_i:obj_j],
-            },
-            "object_type": {
-                "@value": data_loader.id2entity[obj_type],
-            }
-        })
+    for j in range(batch_num):
+        doc = data_loader.test_documents[i*batch_num+j]
+        i_text = doc.raw_text
+        spo_list = []
+        for sop in pres:
+            sub_i, sub_j = sop[0]
+            sub_type = sop[1]
+            obj_i, obj_j = sop[2]
+            obj_type = sop[3]
+            pre_type = sop[4]
+            spo_list.append({
+                "predicate": data_loader.id2relation[pre_type],
+                "subject": i_text[sub_i:sub_j],
+                "subject_type": data_loader.id2entity[sub_type],
+                "object": {
+                    "@value": i_text[obj_i:obj_j],
+                },
+                "object_type": {
+                    "@value": data_loader.id2entity[obj_type],
+                }
+            })
 
-    single_spo = {
-        "text": i_text,
-        "spo_list": spo_list
-    }
-    print(single_spo)
-    submit_res.append(single_spo)
-    break
+        single_spo = {
+            "text": i_text,
+            "spo_list": spo_list
+        }
+        submit_res.append(single_spo)
 
 
 
