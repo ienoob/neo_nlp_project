@@ -6,12 +6,14 @@
     使用transformer+tensorflow2 实现 bert + crf
 """
 import tensorflow as tf
-from transformers import BertTokenizer, TFBertModel
+from transformers import BertTokenizer, TFBertModel, BertConfig, TFBertMainLayer
 from nlp_applications.data_loader import LoadMsraDataV2
+from nlp_applications.ner.crf_addons import crf_log_likelihood, viterbi_decode
 
 msra_data = LoadMsraDataV2("D:\data\\ner\\msra_ner_token_level\\")
 bert_model_name = "bert-base-chinese"
 class_num = len(msra_data.label2id)
+
 
 class DataIterator(object):
     def __init__(self, input_loader, input_batch_num):
@@ -40,9 +42,9 @@ class DataIterator(object):
             batch_sentence_id.append(data["sentence_id"])
             batch_label_id.append(data["label_id"])
             batch_sentence_mask.append(data["sentence_mask"])
-        batch_sentence_id = tf.keras.preprocessing.sequence.pad_sequences(batch_sentence_id, padding="post")
-        batch_label_id = tf.keras.preprocessing.sequence.pad_sequences(batch_label_id, padding="post")
-        batch_sentence_mask = tf.keras.preprocessing.sequence.pad_sequences(batch_sentence_mask, padding="post")
+        batch_sentence_id = tf.keras.preprocessing.sequence.pad_sequences(batch_sentence_id, padding="post", maxlen=512)
+        batch_label_id = tf.keras.preprocessing.sequence.pad_sequences(batch_label_id, padding="post", maxlen=510)
+        batch_sentence_mask = tf.keras.preprocessing.sequence.pad_sequences(batch_sentence_mask, padding="post", maxlen=512)
         return {
             "sentence_id": batch_sentence_id,
             "label_id": batch_label_id,
@@ -61,25 +63,33 @@ class DataIterator(object):
             yield self.batch_transformer(inner_batch_data)
 
 
-
-
-
 class BertCrfModel(tf.keras.Model):
 
     def __init__(self, inner_bert_model_name):
         super(BertCrfModel, self).__init__()
+        config = BertConfig.from_pretrained(inner_bert_model_name, cache_dir=None)
+        print(config)
         self.bert_model = TFBertModel.from_pretrained(inner_bert_model_name)
+        self.bert_model = TFBertModel(config)
+        self.transition_params = tf.Variable(tf.random.uniform(shape=(class_num, class_num)))
         self.out = tf.keras.layers.Dense(class_num, activation="softmax")
 
-    def call(self, inputs, training=None, mask=None):
-        print(inputs)
+    def call(self, inputs, training=None, mask=None, labels=None):
         # seg_id = tf.zeros(mask.shape)
+        text_lens = tf.math.reduce_sum(tf.cast(tf.math.not_equal(inputs, 0), dtype=tf.int32), axis=-1)
         outputs = self.bert_model(inputs, attention_mask=mask)
         outputs = outputs[0][:, 1:-1, :]
 
         out_tags = self.out(outputs)
 
-        return out_tags
+        if labels is not None:
+            label_sequences = tf.convert_to_tensor(labels, dtype=tf.int32)
+            log_likelihood, self.transition_params = crf_log_likelihood(out_tags, label_sequences, text_lens, self.transition_params)
+
+            return out_tags, text_lens, log_likelihood
+        else:
+            return out_tags, text_lens
+
 
 bert_crf_model = BertCrfModel(bert_model_name)
 
@@ -100,8 +110,10 @@ def loss_func(input_y, logits):
 def train_step(input_xx, input_yy, input_mask):
 
     with tf.GradientTape() as tape:
-        logits = bert_crf_model(input_xx, True, input_mask)
-        loss_v = loss_func(input_yy, logits)
+        logits, _, log_likelihood = bert_crf_model(input_xx, True, input_mask, input_yy)
+        loss_v1 = -tf.reduce_mean(log_likelihood)
+        loss_v2 = loss_func(input_yy, logits)
+        loss_v = loss_v1 + loss_v2
 
     variables = bert_crf_model.trainable_variables
     gradients = tape.gradient(loss_v, variables)
@@ -109,7 +121,7 @@ def train_step(input_xx, input_yy, input_mask):
 
     return loss_v
 
-batch_num = 64
+batch_num = 10
 data_iterator = DataIterator(msra_data, batch_num)
 epoch = 5
 for ep in range(epoch):
