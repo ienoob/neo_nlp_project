@@ -50,7 +50,7 @@ class LoadMsraDataV2(object):
         self.train_sentence_list, self.train_tag_list = self.get_data(path + "word_level.train.jsonlines")
         self.test_sentence_list, self.test_tag_list = self.get_data(path+"word_level.test.jsonlines")
 
-        self.labels = ["B-AGE", "I-AGE", "B-ANGLE", "I-ANGLE", "B-AREA", "I-AREA", "B-CAPACTITY", "I-CAPACTITY",
+        self.labels = ["O", "B-AGE", "I-AGE", "B-ANGLE", "I-ANGLE", "B-AREA", "I-AREA", "B-CAPACTITY", "I-CAPACTITY",
                        "B-DATE", "I-DATE", "B-DECIMAL", "I-DECIMAL", "B-DURATION", "I-DURATION",
                        "B-FRACTION", "I-FRACTION", "B-FREQUENCY", "I-FREQUENCY",  "B-INTEGER", "I-INTEGER",
                        "B-LENGTH", "I-LENGTH", "B-LOCATION", "I-LOCATION", "B-MEASURE", "I-MEASURE",
@@ -58,7 +58,11 @@ class LoadMsraDataV2(object):
                        "B-PERCENT", "I-PERCENT",  "B-PERSON", "I-PERSON", "B-PHONE", "I-PHONE",
                        "B-POSTALCODE", "I-POSTALCODE", "B-RATE", "I-RATE", "B-SPEED", "I-SPEED",
                        "B-TEMPERATURE", "I-TEMPERATURE", "B-TIME", "I-TIME", "B-WEIGHT", "I-WEIGHT",
-                       "B-WWW", "I-WWW", "O"]
+                       "B-WWW", "I-WWW"]
+        self.label2id = {"pad": 0}
+        for la in self.labels:
+            if la not in self.label2id:
+                self.label2id[la] = len(self.label2id)
 
     def get_data(self, path):
         data_list = []
@@ -253,6 +257,10 @@ class Document(object):
         self._text_id = input_text_id
         self._entity_list = input_entity_list
         self._relation_list = input_relation_list
+
+    @property
+    def raw_text(self):
+        return self._raw_text
 
     @property
     def text_id(self):

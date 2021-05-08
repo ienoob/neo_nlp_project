@@ -358,6 +358,7 @@ sample_label = tf.constant(([[1, 0]]))
 loss_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
 
+# @tf.function(experimental_relax_shapes=True)
 def train_step(input_xx, input_yy, input_trigger_mask, input_event_label_ids, input_trigger_start, input_trigger_end,
                input_argument_start, input_argument_end):
 
@@ -392,7 +393,7 @@ def eval_metric(real_data, predict_data):
     print(event_hit_count, event_real_count, event_predict_count)
 
 
-epoch = 100
+epoch = 10
 um_model_path = "D:\\tmp\event_model_v1\\event_mv1"
 for ep in range(epoch):
 
@@ -412,6 +413,7 @@ for ep in range(epoch):
             # predict_res = um_model.predict(data["encoding"])
             # eval_metric(data["eval_event_data"], predict_res)
 
+um_model.load_weights(um_model_path)
 submit_res = []
 sub_ind = 0
 for batch, data in enumerate(get_test_batch_data(batch_num)):
@@ -431,6 +433,6 @@ for batch, data in enumerate(get_test_batch_data(batch_num)):
                 "arguments": [{"argument": bd_data_loader.id2argument[e_arg[2]], "role": doc_text[e_arg[0]:e_arg[1]+1]} for e_arg in event["arguments"]]
             }
             single_res["event_list"].append(event_res)
-
+        print(single_res)
         sub_ind += 1
         submit_res.append(single_res)
