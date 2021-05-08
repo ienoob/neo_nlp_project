@@ -118,14 +118,14 @@ class DataIter(object):
         entity_list = set()
         entity_loc_map = dict()
         event_label = [0]*event_class_num
-        entity_dict = dict()
+        entity_dict = {(0, 0, 0): 0}
         event_type_list = []
         event_argument_list = []
         event_is_valid = []
         for event in input_doc.event_list:
             event_type_list.append(event.id)
             event_is_valid.append(1)
-            sub_event_arg = [-1]*max_argument_len
+            sub_event_arg = [0]*max_argument_len
             event_label[event.id] = 1
             for arg in event.arguments:
                 if arg.is_enum:
@@ -199,8 +199,6 @@ class DataIter(object):
             max_entity_num = max(len(data["entity_mask"]), max_entity_num)
             max_event_num = max(len(data["event_argument"]), max_event_num)
             batch_event_id.append(data["event_type"])
-        # 这里是一个trick, 为了给不存在的argument 填充 0 向量
-        max_entity_num += 1
 
         for data in input_batch_data:
             sub_sentences_id = data["sentences_id"]
@@ -215,14 +213,14 @@ class DataIter(object):
                 sub_entity_label_id += [tf.zeros(i_max_len) for _ in range(max_sentence_num-sub_len)]
 
             sub_entity_mask += [tf.zeros(i_max_len) for _ in range(max_entity_num-len(sub_entity_mask))]
-            sub_entity_loc += [-1 for _ in range(max_entity_num-len(sub_entity_loc))]
-            sub_event_argument += [tf.ones(max_event_num)*-1 for _ in range(max_event_num-len(sub_event_argument))]
+            sub_entity_loc += [0 for _ in range(max_entity_num-len(sub_entity_loc))]
+            sub_event_argument += [tf.zeros(max_event_num) for _ in range(max_event_num-len(sub_event_argument))]
             sub_event_is_valid += [0 for _ in range(max_event_num-len(sub_event_is_valid))]
 
             sub_sentences_id = tf.keras.preprocessing.sequence.pad_sequences(sub_sentences_id, padding="post", maxlen=max_len)
             sub_entity_label_id = tf.keras.preprocessing.sequence.pad_sequences(sub_entity_label_id, padding="post", maxlen=max_len)
             sub_entity_mask = tf.keras.preprocessing.sequence.pad_sequences(sub_entity_mask, padding="post", maxlen=max_len)
-            sub_event_argument = tf.keras.preprocessing.sequence.pad_sequences(sub_event_argument, padding="post")
+            sub_event_argument = tf.keras.preprocessing.sequence.pad_sequences(sub_event_argument, padding="post", maxlen=max_argument_len)
             batch_sentences_id.append(sub_sentences_id)
             batch_entity_label_id.append(sub_entity_label_id)
             batch_entity_mask.append(sub_entity_mask)
@@ -246,6 +244,8 @@ class DataIter(object):
         inner_batch_data = []
         for doc in self.input_loader.document:
             tf_data = self._transformer2feature(doc)
+            if len(tf_data["event_type"]) == 0:
+                continue
             inner_batch_data.append(tf_data)
             if len(inner_batch_data) == self.input_batch_num:
                 yield self.batch_transformer(inner_batch_data)
@@ -296,12 +296,11 @@ class EventModelDocV1(tf.keras.Model):
         sentence_maxpool = tf.reduce_max(input_id, axis=1)
         sentence_feature = self.event_lstm_layer(sentence_maxpool)
         sentence_feature = tf.reshape(sentence_feature, (batch_num, -1))
-        sentence_entity_label = tf.map_fn(lambda x: self.entity_lstm_layer(x), input_id, dtype=tf.float32)
-        sentence_entity_label = self.entity_output(sentence_entity_label)
+        sentence_entity_feature = tf.map_fn(lambda x: self.entity_lstm_layer(x), input_id, dtype=tf.float32)
+        sentence_entity_label = self.entity_output(sentence_entity_feature)
         event_label = self.event_classifier(sentence_feature)
 
         event_embed = self.event_embed(event_id)
-        print(event_embed, "++++")
 
         batch_event_argument_feature = []
         for batch_id in range(batch_num):
@@ -318,13 +317,37 @@ class EventModelDocV1(tf.keras.Model):
             entity_feature = tf.reduce_max(entity_feature, axis=1)
             event_argument_feature = tf.map_fn(lambda x: tf.gather(entity_feature, x), event_argument_value,
                                                dtype=tf.float32)
-            event_argument_feature = tf.reshape(event_argument_feature, (event_argument_feature.shape[0], -1))
+            event_argument_feature_shape = event_argument_feature.shape
+            if event_argument_feature_shape[0] is None:
+                event_argument_feature = tf.reshape(event_argument_feature, (-1, event_argument_feature_shape[1]*event_argument_feature_shape[2]))
+            else:
+                event_argument_feature = tf.reshape(event_argument_feature, (event_argument_feature_shape[0], -1))
             batch_event_argument_feature.append(event_argument_feature)
         batch_event_argument_feature = tf.stack(batch_event_argument_feature)
         event_feature = tf.concat([event_embed, batch_event_argument_feature], axis=2)
         event_valid_trigger = self.event_is_valid(event_feature)
 
         return sentence_entity_label, event_label, event_valid_trigger
+
+    def predict(self,
+              inputs,
+              batch_size=None,
+              verbose=0,
+              steps=None,
+              callbacks=None,
+              max_queue_size=10,
+              workers=1,
+              use_multiprocessing=False):
+
+        batch_num = inputs.shape[0]
+        input_id = self.embed(inputs)
+
+        sentence_maxpool = tf.reduce_max(input_id, axis=1)
+        sentence_feature = self.event_lstm_layer(sentence_maxpool)
+        sentence_feature = tf.reshape(sentence_feature, (batch_num, -1))
+        sentence_entity_feature = tf.map_fn(lambda x: self.entity_lstm_layer(x), input_id, dtype=tf.float32)
+        sentence_entity_label = self.entity_output(sentence_entity_feature)
+        event_label = self.event_classifier(sentence_feature)
 
 
 emdv1 = EventModelDocV1()
@@ -341,7 +364,7 @@ def train_step(input_sentences, input_entity_label, input_event_type, input_enti
         entity_logits, event_logits, event_valid_logits = emdv1(input_sentences, input_entity_mask, input_entity_loc, input_event_id, input_event_argument)
         lossv1 = loss_func(input_entity_label, entity_logits)
         lossv2 = loss_func2(input_event_type, event_logits)
-        lossv3 = loss_func2(input_event_is_valid, event_valid_logits)
+        lossv3 = loss_func3(input_event_is_valid, event_valid_logits)
         lossv = lossv1 + lossv2 + lossv3
 
     variables = emdv1.variables
@@ -361,6 +384,5 @@ for e in range(epoch):
 
         if batch_i % 100 == 0:
             print("epoch {0} batch {1} loss is {2}".format(e, batch_i, loss_value))
-        break
     break
 

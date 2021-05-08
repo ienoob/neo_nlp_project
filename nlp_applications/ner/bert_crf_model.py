@@ -96,6 +96,7 @@ bert_crf_model = BertCrfModel(bert_model_name)
 
 optimizer = tf.keras.optimizers.Adam()
 
+
 def loss_func(input_y, logits):
     cross_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
     mask = tf.math.logical_not(tf.math.equal(input_y, 0))
