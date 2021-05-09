@@ -770,6 +770,7 @@ class LoaderBaiduDueeFin(object):
         self.id2event = {v:k for k,v in self.event2id.items()}
 
         train_path = data_path + "\\duee_fin_train.json\\duee_fin_train.json"
+        test_path = data_path + "\\duee_fin_test1.json\\duee_fin_test1.json"
 
         self.document = []
         self.char2id = {
@@ -842,6 +843,27 @@ class LoaderBaiduDueeFin(object):
                     event.add_argument(argument)
                 sub_doc.add_event(event)
             self.document.append(sub_doc)
+
+        self.test_document = []
+        test_data = load_json_line_data(test_path)
+        for i, sub_test_data in enumerate(test_data):
+            text = sub_test_data["text"]
+            title = sub_test_data["title"]
+            doc_id = sub_test_data["id"]
+            text_id = []
+            title_id = []
+
+            for char in text:
+                if char not in self.char2id:
+                    self.char2id[char] = len(self.char2id)
+                text_id.append(self.char2id[char])
+
+            for char in title:
+                if char not in self.char2id:
+                    self.char2id[char] = len(self.char2id)
+                title_id.append(self.char2id[char])
+            sub_doc = EventDocument(doc_id, text, text_id, title, title_id)
+            self.test_document.append(sub_doc)
 
 
 class QaPair(object):

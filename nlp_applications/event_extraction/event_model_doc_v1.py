@@ -3,24 +3,26 @@
 # Copyright (c) ***
 """
     文档级别的事件抽取模型
-    ╮(╯▽╰)╭，还是先用pipeline 的结构吧， joint model 实在有点难实现， -_-||
+    ╮(╯▽╰)╭， 简单的joint model 实在有点难实现， -_-||
     1）第一步提取所有的实体和事件类型
-    2）第二步对
+    2）第二步对事件和实体进行匹配
 """
 
 import tensorflow as tf
 from nlp_applications.data_loader import LoaderBaiduDueeFin, EventDocument, Event, Argument
 from nlp_applications.ner.evaluation import extract_entity
 
-sample_path = "D:\data\\篇章级事件抽取\\"
+sample_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\\篇章级事件抽取\\"
 bd_data_loader = LoaderBaiduDueeFin(sample_path)
 max_len = 256
 print(bd_data_loader.event2id)
 print(bd_data_loader.argument_role2id)
 
+
 entity_class_num = len(bd_data_loader.argument_role2id)
 event_class_num = len(bd_data_loader.event2id)
 event2argument = bd_data_loader.event2argument
+argument_role2id = bd_data_loader.argument_role2id
 max_argument_len = max([len(v) for _, v in event2argument.items()])
 
 # for doc in bd_data_loader.document:
@@ -48,7 +50,7 @@ def cut_sentence(input_sentence):
                     break
                 last_ind -= 1
         if indx == last_ind:
-            print(input_sentence)
+            # print(input_sentence)
             raise Exception
         pre_cut = input_sentence[indx:last_ind]
         innser_sentence_list.append(pre_cut)
@@ -178,6 +180,40 @@ class DataIter(object):
             "event_is_valid": event_is_valid
         }
 
+    def _transformer2testfeature(self, input_doc: EventDocument):
+        text = input_doc.text
+        title = input_doc.title
+        sentences = [title]
+        sentences_id = []
+        split_char = {"。", "\n"}
+        sentence = ""
+        for char in text:
+            if char in split_char:
+                sentence += char
+                sentence = sentence.strip()
+                if len(sentence) > max_len:
+                    tiny_sentence_list = cut_sentence(sentence)
+                    sentences += tiny_sentence_list
+                elif sentence:
+                    sentences.append(sentence)
+                sentence = ""
+            else:
+                sentence += char
+        sentence = sentence.strip()
+        if sentence:
+            if len(sentence) > max_len:
+                sentences += cut_sentence(sentence)
+            else:
+                sentences.append(sentence)
+
+        for row_ind, sentence in enumerate(sentences):
+            sentence_id = [self.input_loader.char2id[char] for char in sentence]
+            sentences_id.append(sentence_id)
+
+        return {
+            "sentences_id": sentences_id
+        }
+
     def batch_transformer(self, input_batch_data):
         batch_sentences_id = []
         batch_entity_label_id = []
@@ -241,6 +277,30 @@ class DataIter(object):
             "event_is_valid": tf.cast(batch_event_valid, dtype=tf.int64)
         }
 
+    def batch_test_transformer(self, input_batch_data):
+        batch_sentences_id = []
+
+        i_max_len = 0
+        max_sentence_num = 0
+        for data in input_batch_data:
+            max_sentence_num = max(len(data["sentences_id"]), max_sentence_num)
+            for sentence_id in data["sentences_id"]:
+                i_max_len = max(len(sentence_id), i_max_len)
+
+        for data in input_batch_data:
+            sub_sentences_id = data["sentences_id"]
+            sub_len = len(sub_sentences_id)
+            if sub_len < max_sentence_num:
+                sub_sentences_id += [tf.zeros(i_max_len) for _ in range(max_sentence_num - sub_len)]
+
+            sub_sentences_id = tf.keras.preprocessing.sequence.pad_sequences(sub_sentences_id, padding="post",
+                                                                             maxlen=max_len)
+            batch_sentences_id.append(sub_sentences_id)
+
+        return {
+            "sentences_id": tf.cast(batch_sentences_id, dtype=tf.int64)
+        }
+
     def __iter__(self):
         inner_batch_data = []
         for doc in self.input_loader.document:
@@ -253,6 +313,15 @@ class DataIter(object):
                 inner_batch_data = []
         # if inner_batch_data:
         #     yield self.batch_transformer(inner_batch_data)
+
+    def iter_test(self):
+        inner_batch_data = []
+        for doc in self.input_loader.test_document:
+            tf_data = self._transformer2testfeature(doc)
+            inner_batch_data.append(tf_data)
+            if len(inner_batch_data) == self.input_batch_num:
+                yield self.batch_test_transformer(inner_batch_data)
+                inner_batch_data = []
 
 
 data_iter = DataIter(bd_data_loader, 2)
@@ -351,11 +420,57 @@ class EventModelDocV1(tf.keras.Model):
         sentence_entity_label = self.entity_output(sentence_entity_feature)
         event_label = self.event_classifier(sentence_feature)
 
-        batch_res = list()
-        for b in range(i_batch_num):
-            sentence_entity_label = tf.argmax(sentence_entity_label, axis=-1)
-            for sentence_inner_label in sentence_entity_label:
-                sentence_inner_label = sentence_inner_label.numpy()
+
+        batch_res = []
+        pg_entity_label = tf.argmax(sentence_entity_label, axis=-1)
+        for bi, pg_inner_label in enumerate(pg_entity_label):
+            sentence_value = input_id[bi]
+            batch_event_label = event_label[bi]
+            batch_event_label_value = batch_event_label.numpy()
+            batch_event_res = [i for i, bel in enumerate(batch_event_label_value) if bel > 0.5]
+            print(batch_event_res)
+
+            entity_mask = [0 for _ in range(max_len)]
+            entity_list = [(0, 0, 0)]
+            entity_sentence_loc = []
+            entity_map_id = dict()
+            pg_inner_label = pg_inner_label.numpy()
+            for si, sentence_inner_label in enumerate(pg_inner_label):
+                sentence_inner_label_value = [id2entity_label[si] for si in sentence_inner_label]
+                pred_entity = extract_entity(sentence_inner_label_value)
+
+                for ss, se, ee in pred_entity:
+                    entity_one_mask = [1 if ss <= vi < se else 0 for vi in range(max_len)]
+                    entity_mask.append(entity_one_mask)
+                    entity_list.append((bi, ss, se, ee))
+                    entity_sentence_loc.append(si)
+
+            entity_mask_value = tf.cast(entity_mask, dtype=tf.float32)
+            entity_sentence_loc = tf.cast(entity_sentence_loc, dtype=tf.float32)
+
+            entity_loc_sentence = tf.gather(sentence_value, entity_sentence_loc)
+            entity_feature = tf.multiply(entity_loc_sentence, entity_mask_value)
+            entity_feature = tf.reduce_max(entity_feature, axis=1)
+
+            event_info_collect = dict()
+            event_path_feature = []
+            event_id_list = []
+            for ei in batch_event_res:
+                argument_role = argument_role2id[ei]
+                event_info_collect.setdefault(ei, {ini: [] for ini in range(len(argument_role))})
+                for eii, et in enumerate(entity_list):
+                    if et[3] in argument_role:
+                        event_info_collect[ei][argument_role[et[3]]].append(eii)
+
+
+
+
+
+
+            # batch_res.append(event_res)
+        print(batch_res)
+
+        return batch_res
 
 
 
@@ -384,16 +499,41 @@ def train_step(input_sentences, input_entity_label, input_event_type, input_enti
 
 
 model_path = "D:\\tmp\event_model_doc_v1\\model"
-epoch = 10
-for e in range(epoch):
+# epoch = 10
+# for e in range(epoch):
+#
+#     for batch_i, batch_data in enumerate(data_iter):
+#         loss_value = train_step(batch_data["sentences_id"], batch_data["entity_labels"], batch_data["event_label"],
+#                                 batch_data["entity_mask"], batch_data["entity_loc"], batch_data["event_id"],
+#                                 batch_data["event_argument"], batch_data["event_is_valid"])
+#
+#         if batch_i % 100 == 0:
+#             print("epoch {0} batch {1} loss is {2}".format(e, batch_i, loss_value))
+#             emdv1.save_weights(model_path, save_format='tf')
+#     break
 
-    for batch_i, batch_data in enumerate(data_iter):
-        loss_value = train_step(batch_data["sentences_id"], batch_data["entity_labels"], batch_data["event_label"],
-                                batch_data["entity_mask"], batch_data["entity_loc"], batch_data["event_id"],
-                                batch_data["event_argument"], batch_data["event_is_valid"])
+emdv1.load_weights(model_path)
+submit_res = []
+sub_ind = 0
+for batch_i, data in enumerate(data_iter.iter_test()):
+    predict_res = emdv1.predict(data["sentences_id"])
 
-        if batch_i % 100 == 0:
-            print("epoch {0} batch {1} loss is {2}".format(e, batch_i, loss_value))
-            emdv1.save_weights(model_path, save_format='tf')
     break
 
+    # for single_data in predict_res:
+    #     doc = bd_data_loader.test_document[sub_ind]
+    #     doc_text = doc.text
+    #     single_res = {
+    #         "id": doc.id,
+    #         "event_list": []
+    #     }
+    #
+    #     for event in single_data:
+    #         event_res = {
+    #             "event_type": bd_data_loader.id2event[event["event_id"]],
+    #             "arguments": [{"argument": bd_data_loader.id2argument[e_arg[2]], "role": doc_text[e_arg[0]:e_arg[1]+1]} for e_arg in event["arguments"]]
+    #         }
+    #         single_res["event_list"].append(event_res)
+    #     print(single_res)
+    #     sub_ind += 1
+    #     submit_res.append(single_res)
