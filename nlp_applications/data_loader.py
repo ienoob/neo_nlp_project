@@ -767,7 +767,8 @@ class LoaderBaiduDueeFin(object):
 
                 if "enum_items" in role:
                     role_enum[role["role"]] = role["enum_items"]
-        self.id2event = {v:k for k,v in self.event2id.items()}
+        self.id2event = {v: k for k, v in self.event2id.items()}
+        self.id2argument_role = {v: k for k, v in self.argument_role2id.items()}
 
         train_path = data_path + "\\duee_fin_train.json\\duee_fin_train.json"
         test_path = data_path + "\\duee_fin_test1.json\\duee_fin_test1.json"

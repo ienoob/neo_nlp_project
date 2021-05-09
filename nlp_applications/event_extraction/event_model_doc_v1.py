@@ -72,8 +72,8 @@ class DataIter(object):
         for e_label in self.input_loader.argument_role2id:
             if e_label == "$unk$":
                 continue
-            self.entity_label2id[e_label+"_B"] = len(self.entity_label2id)
-            self.entity_label2id[e_label + "_I"] = len(self.entity_label2id)
+            self.entity_label2id[e_label+"-B"] = len(self.entity_label2id)
+            self.entity_label2id[e_label + "-I"] = len(self.entity_label2id)
 
         self.id2entity_label = {v: k for k, v in self.entity_label2id.items()}
 
@@ -211,7 +211,8 @@ class DataIter(object):
             sentences_id.append(sentence_id)
 
         return {
-            "sentences_id": sentences_id
+            "sentences_id": sentences_id,
+            "sentences_raw": sentences
         }
 
     def batch_transformer(self, input_batch_data):
@@ -279,6 +280,7 @@ class DataIter(object):
 
     def batch_test_transformer(self, input_batch_data):
         batch_sentences_id = []
+        batch_sentences_raw = []
 
         i_max_len = 0
         max_sentence_num = 0
@@ -286,6 +288,7 @@ class DataIter(object):
             max_sentence_num = max(len(data["sentences_id"]), max_sentence_num)
             for sentence_id in data["sentences_id"]:
                 i_max_len = max(len(sentence_id), i_max_len)
+            batch_sentences_raw += data["sentences_raw"]
 
         for data in input_batch_data:
             sub_sentences_id = data["sentences_id"]
@@ -298,7 +301,8 @@ class DataIter(object):
             batch_sentences_id.append(sub_sentences_id)
 
         return {
-            "sentences_id": tf.cast(batch_sentences_id, dtype=tf.int64)
+            "sentences_id": tf.cast(batch_sentences_id, dtype=tf.int64),
+            "sentences_raw": batch_sentences_raw
         }
 
     def __iter__(self):
@@ -322,6 +326,8 @@ class DataIter(object):
             if len(inner_batch_data) == self.input_batch_num:
                 yield self.batch_test_transformer(inner_batch_data)
                 inner_batch_data = []
+        if inner_batch_data:
+            yield self.batch_test_transformer(inner_batch_data)
 
 
 data_iter = DataIter(bd_data_loader, 2)
@@ -420,20 +426,18 @@ class EventModelDocV1(tf.keras.Model):
         sentence_entity_label = self.entity_output(sentence_entity_feature)
         event_label = self.event_classifier(sentence_feature)
 
-
         batch_res = []
         pg_entity_label = tf.argmax(sentence_entity_label, axis=-1)
         for bi, pg_inner_label in enumerate(pg_entity_label):
             sentence_value = input_id[bi]
             batch_event_label = event_label[bi]
+            event_with_argument_list = []
             batch_event_label_value = batch_event_label.numpy()
             batch_event_res = [i for i, bel in enumerate(batch_event_label_value) if bel > 0.5]
-            print(batch_event_res)
 
-            entity_mask = [0 for _ in range(max_len)]
-            entity_list = [(0, 0, 0)]
-            entity_sentence_loc = []
-            entity_map_id = dict()
+            entity_mask = [[0 for _ in range(max_len)]]
+            entity_list = [(0, 0, 0, 0)]
+            entity_sentence_loc = [0]
             pg_inner_label = pg_inner_label.numpy()
             for si, sentence_inner_label in enumerate(pg_inner_label):
                 sentence_inner_label_value = [id2entity_label[si] for si in sentence_inner_label]
@@ -442,34 +446,61 @@ class EventModelDocV1(tf.keras.Model):
                 for ss, se, ee in pred_entity:
                     entity_one_mask = [1 if ss <= vi < se else 0 for vi in range(max_len)]
                     entity_mask.append(entity_one_mask)
-                    entity_list.append((bi, ss, se, ee))
+                    entity_list.append((si, ss, se, argument_role2id[ee]))
                     entity_sentence_loc.append(si)
 
             entity_mask_value = tf.cast(entity_mask, dtype=tf.float32)
-            entity_sentence_loc = tf.cast(entity_sentence_loc, dtype=tf.float32)
+            entity_mask_value = tf.expand_dims(entity_mask_value, axis=-1)
+            entity_sentence_loc = tf.cast(entity_sentence_loc, dtype=tf.int64)
 
             entity_loc_sentence = tf.gather(sentence_value, entity_sentence_loc)
+
             entity_feature = tf.multiply(entity_loc_sentence, entity_mask_value)
             entity_feature = tf.reduce_max(entity_feature, axis=1)
 
             event_info_collect = dict()
             event_path_feature = []
             event_id_list = []
+
+            def func(input_dict, input_path, ind, input_e_id):
+                if len(input_dict) == ind:
+                    event_path_feature.append(input_path)
+                    event_id_list.append(input_e_id)
+                    return
+                if not input_dict[ind]:
+                    func(input_dict, input_path+[0], ind+1, input_e_id)
+                else:
+                    for inner_ind in input_dict[ind]:
+                        func(input_dict, input_path + [inner_ind], ind + 1, input_e_id)
+
             for ei in batch_event_res:
-                argument_role = argument_role2id[ei]
+                argument_role = event2argument[ei]
                 event_info_collect.setdefault(ei, {ini: [] for ini in range(len(argument_role))})
                 for eii, et in enumerate(entity_list):
                     if et[3] in argument_role:
                         event_info_collect[ei][argument_role[et[3]]].append(eii)
 
+                func(event_info_collect[ei], [], 0, ei)
+            if event_id_list:
+                event_id_list_embed = tf.cast(event_id_list, dtype=tf.int64)
+                event_path_feature_pad = tf.keras.preprocessing.sequence.pad_sequences(event_path_feature, padding="post",
+                                                                                   maxlen=max_argument_len)
+                event_argument_feature = tf.map_fn(lambda x: tf.gather(entity_feature, x), event_path_feature_pad,
+                                                   dtype=tf.float32)
+                event_argument_feature = tf.reshape(event_argument_feature, (event_argument_feature.shape[0], -1))
+                event_id_feature = self.event_embed(event_id_list_embed)
 
+                event_feature = tf.concat([event_id_feature, event_argument_feature], axis=1)
 
+                event_trigger_label = self.event_is_valid(event_feature)
 
+                event_trigger_label_value = event_trigger_label.numpy()
+                for i, e_trigger_value in enumerate(event_trigger_label_value):
+                    if e_trigger_value[0] > 0.5:
+                        event_path_feature_value = [entity_list[ev] for ev in event_path_feature[i]]
+                        event_with_argument_list.append((event_id_list[i], event_path_feature_value))
 
-
-            # batch_res.append(event_res)
-        print(batch_res)
-
+            batch_res.append(event_with_argument_list)
         return batch_res
 
 
@@ -516,24 +547,26 @@ emdv1.load_weights(model_path)
 submit_res = []
 sub_ind = 0
 for batch_i, data in enumerate(data_iter.iter_test()):
+    print(batch_i)
     predict_res = emdv1.predict(data["sentences_id"])
+    data_text_raw = data["sentences_raw"]
 
-    break
-
-    # for single_data in predict_res:
-    #     doc = bd_data_loader.test_document[sub_ind]
-    #     doc_text = doc.text
-    #     single_res = {
-    #         "id": doc.id,
-    #         "event_list": []
-    #     }
-    #
-    #     for event in single_data:
-    #         event_res = {
-    #             "event_type": bd_data_loader.id2event[event["event_id"]],
-    #             "arguments": [{"argument": bd_data_loader.id2argument[e_arg[2]], "role": doc_text[e_arg[0]:e_arg[1]+1]} for e_arg in event["arguments"]]
-    #         }
-    #         single_res["event_list"].append(event_res)
-    #     print(single_res)
-    #     sub_ind += 1
-    #     submit_res.append(single_res)
+    for bni, b_data in enumerate(predict_res):
+        text_raw = data_text_raw[bni]
+        d_res = {
+            "id": bd_data_loader.test_document[sub_ind],
+            "event_list": []
+        }
+        for e_data in b_data:
+            e_id = e_data[0]
+            e_argument_list = [{"role": bd_data_loader.id2argument_role[role_i], "argument": text_raw[sent_i][start_i:end_i]} for sent_i, start_i, end_i, role_i in e_data[1]]
+            e_info = {
+                "event_type": bd_data_loader.id2event[e_id],
+                "arguments": e_argument_list
+            }
+            d_res["event_list"].append(e_info)
+            # print(e_argument_list)
+        submit_res.append(d_res)
+        sub_ind += 1
+print(submit_res[-1])
+print(len(submit_res))
