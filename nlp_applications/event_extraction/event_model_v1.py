@@ -393,7 +393,7 @@ def eval_metric(real_data, predict_data):
     print(event_hit_count, event_real_count, event_predict_count)
 
 
-epoch = 10
+epoch = 100
 um_model_path = "D:\\tmp\event_model_v1\\event_mv1"
 for ep in range(epoch):
 
@@ -438,5 +438,6 @@ for batch, data in enumerate(get_test_batch_data(batch_num)):
         sub_ind += 1
         submit_res.append(json.dumps(single_res))
 
-with open("D:\\tmp\submit_data\\duee.json", "w") as f:
+submit_save_path = "D:\\tmp\submit_data\\duee.json"
+with open(submit_save_path, "w") as f:
     f.write("\n".join(submit_res))

@@ -7,12 +7,12 @@
     1）第一步提取所有的实体和事件类型
     2）第二步对事件和实体进行匹配
 """
-
+import json
 import tensorflow as tf
 from nlp_applications.data_loader import LoaderBaiduDueeFin, EventDocument, Event, Argument
 from nlp_applications.ner.evaluation import extract_entity
 
-sample_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\\篇章级事件抽取\\"
+sample_path = "D:\data\\篇章级事件抽取\\"
 bd_data_loader = LoaderBaiduDueeFin(sample_path)
 max_len = 256
 print(bd_data_loader.event2id)
@@ -38,7 +38,7 @@ max_argument_len = max([len(v) for _, v in event2argument.items()])
 def cut_sentence(input_sentence):
     innser_sentence_list = []
     sentence_len = len(input_sentence)
-    cut_char = {"，", " ", "；", "》", "）", "、", ";"}
+    cut_char = {"，", " ", "；", "》", "）", "、", ";", "."}
     indx = 0
 
     while indx < sentence_len:
@@ -50,7 +50,7 @@ def cut_sentence(input_sentence):
                     break
                 last_ind -= 1
         if indx == last_ind:
-            # print(input_sentence)
+            print(input_sentence)
             raise Exception
         pre_cut = input_sentence[indx:last_ind]
         innser_sentence_list.append(pre_cut)
@@ -136,9 +136,9 @@ class DataIter(object):
 
                 row_ind, column_ind_start = self._search_index(arg.argument, sentences)
                 entity_list.add((row_ind, column_ind_start, column_ind_start+len(arg.argument), arg.role))
-                entity_loc_map[(row_ind, column_ind_start)] = self.entity_label2id[arg.role+"_B"]
+                entity_loc_map[(row_ind, column_ind_start)] = self.entity_label2id[arg.role+"-B"]
                 for ind in range(column_ind_start+1, column_ind_start+len(arg.argument)):
-                    entity_loc_map[(row_ind, ind)] = self.entity_label2id[arg.role+"_I"]
+                    entity_loc_map[(row_ind, ind)] = self.entity_label2id[arg.role+"-I"]
 
                 arg_type_id = event2argument[event.id][arg.role_id]
                 role_key = (row_ind, column_ind_start, len(arg.argument))
@@ -554,19 +554,25 @@ for batch_i, data in enumerate(data_iter.iter_test()):
     for bni, b_data in enumerate(predict_res):
         text_raw = data_text_raw[bni]
         d_res = {
-            "id": bd_data_loader.test_document[sub_ind],
+            "id": bd_data_loader.test_document[sub_ind].id,
             "event_list": []
         }
         for e_data in b_data:
             e_id = e_data[0]
-            e_argument_list = [{"role": bd_data_loader.id2argument_role[role_i], "argument": text_raw[sent_i][start_i:end_i]} for sent_i, start_i, end_i, role_i in e_data[1]]
+            e_argument_list = [{"role": bd_data_loader.id2argument_role[role_i], "argument": text_raw[sent_i][start_i:end_i]} for sent_i, start_i, end_i, role_i in e_data[1] if role_i!=0]
             e_info = {
                 "event_type": bd_data_loader.id2event[e_id],
                 "arguments": e_argument_list
             }
             d_res["event_list"].append(e_info)
             # print(e_argument_list)
-        submit_res.append(d_res)
+        print(d_res)
+        submit_res.append(json.dumps(d_res))
         sub_ind += 1
-print(submit_res[-1])
-print(len(submit_res))
+
+
+with open("D:\\tmp\submit_data\\duee-fin.json", "w") as f:
+    f.write("\n".join(submit_res))
+
+# print(submit_res[-1])
+# print(len(submit_res))
