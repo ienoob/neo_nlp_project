@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # Copyright (c) ***
-
+import json
 from typing import List, Callable
 import numpy as np
 import tensorflow as tf
@@ -39,7 +39,7 @@ def padding_data(input_batch):
         encodings.append(bd["encoding"])
         event_labels.append(bd["event_label"])
         max_len = max(max_len, bd["encoding"].shape[0])
-        event_label_ids.append(bd["event_label_id"])
+        event_label_ids.append(len(bd["event_label_id"]))
         eval_event.append(bd["trigger_loc"])
         eval_event_data_batch.append(bd["eval_event_data"])
 
@@ -66,7 +66,6 @@ def padding_data(input_batch):
                 event_argus_end[s] = aid
             event_argument_start.append(event_argus_start)
             event_argument_end.append(event_argus_end)
-
     return {
         "encoding": tf.keras.preprocessing.sequence.pad_sequences(encodings, padding="post"),
         "event_label": tf.cast(event_labels, dtype=tf.int64),
@@ -75,7 +74,7 @@ def padding_data(input_batch):
         "event_argument_start": tf.cast(event_argument_start, dtype=tf.float32),
         "event_argument_end": tf.cast(event_argument_end, dtype=tf.float32),
         "trigger_masks": tf.cast(trigger_masks, dtype=tf.float32),
-        "event_label_ids": event_label_ids,
+        "event_label_ids": tf.cast(event_label_ids, dtype=tf.int64),
         "eval_event_trigger": eval_event
     }
 
@@ -196,15 +195,16 @@ values = [0.001, 0.0001, 0.00001]
 lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(boundaries, values)
 
 
-def repeat_data(input_feature, input_event_label_ids):
-    inner_batch_num = input_feature.shape[0]
-    out_data = []
-    for i in range(inner_batch_num):
-        sub_feature = input_feature[i]
-        for j in input_event_label_ids[i]:
-            out_data.append(sub_feature)
+def repeat_data(input_feature, input_event_label_size):
+    out_data = tf.repeat(input_feature, input_event_label_size, axis=0)
+    # inner_batch_num = input_feature.shape[0]
+    # out_data = []
+    # for i in range(inner_batch_num):
+    #     sub_feature = input_feature[i]
+    #     for j in range(input_event_label_ids[i]):
+    #         out_data.append(sub_feature)
 
-    return tf.cast(out_data, dtype=tf.float32)
+    return out_data
 
 
 def get_data_loc(input_trigger_start, input_trigger_end, input_seq):
@@ -358,7 +358,7 @@ sample_label = tf.constant(([[1, 0]]))
 loss_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
 
-# @tf.function(experimental_relax_shapes=True)
+@tf.function(experimental_relax_shapes=True)
 def train_step(input_xx, input_yy, input_trigger_mask, input_event_label_ids, input_trigger_start, input_trigger_end,
                input_argument_start, input_argument_end):
 
@@ -417,6 +417,7 @@ um_model.load_weights(um_model_path)
 submit_res = []
 sub_ind = 0
 for batch, data in enumerate(get_test_batch_data(batch_num)):
+    print("batch {} start".format(batch))
     predict_res = um_model.predict(data["encoding"])
 
     for single_data in predict_res:
@@ -433,6 +434,9 @@ for batch, data in enumerate(get_test_batch_data(batch_num)):
                 "arguments": [{"argument": bd_data_loader.id2argument[e_arg[2]], "role": doc_text[e_arg[0]:e_arg[1]+1]} for e_arg in event["arguments"]]
             }
             single_res["event_list"].append(event_res)
-        print(single_res)
+        # print(single_res)
         sub_ind += 1
-        submit_res.append(single_res)
+        submit_res.append(json.dumps(single_res))
+
+with open("D:\\tmp\submit_data\\duee.json", "w") as f:
+    f.write("\n".join(submit_res))
