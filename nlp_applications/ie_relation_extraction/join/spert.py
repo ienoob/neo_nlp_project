@@ -596,9 +596,23 @@ for i, batch_data in enumerate(batch_data_iter):
         print(single_spo)
         submit_res.append(json.dumps(single_spo))
 
+save_batch_num = 1000
+save_path = "D:\\tmp\submit_data\\duie.json"
+with open(save_path, "w") as f:
+    f.write("\n".join(submit_res[:save_batch_num]))
 
-with open("D:\\tmp\submit_data\\duie.json", "w") as f:
-    f.write("\n".join(submit_res))
+batch_count = int(len(submit_res)//save_batch_num) + 1
+print(batch_count)
+
+for ib in range(1, batch_count):
+    ib_start = ib*save_batch_num
+    ib_end = ib*save_batch_num + save_batch_num
+    if len(submit_res[ib_start:ib_end]) == 0:
+        break
+    with open(save_path, "a+") as f:
+        f.write("\n")
+        f.write("\n".join(submit_res[ib_start:ib_end]))
+
 
 
 
