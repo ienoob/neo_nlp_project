@@ -13,6 +13,7 @@
 import re
 import json
 import logging
+import jieba
 import numpy as np
 from nlp_applications.data_loader import load_json_line_data
 from nlp_applications.utils import load_word_vector
@@ -173,6 +174,17 @@ def single_pattern(input_str):
     return pattern
 
 
+def cosine_distance(input_a, input_b):
+    a_norm = np.linalg.norm(input_a)
+    b_norm = np.linalg.norm(input_b)
+    similarity = np.dot(input_a, input_b.T) / (a_norm * b_norm)
+
+    return similarity
+
+
+tree_shreshold = 0.8
+
+
 class PatternModel(object):
 
     def __init__(self):
@@ -184,6 +196,7 @@ class PatternModel(object):
         self.train_text = []
         self.train_label = []
         self.n_pattern_list = []
+        self.word_embed_feature = []
 
     def negative_choice(self, input_text, positive_span=tuple()):
         dlen = len(input_text)
@@ -207,6 +220,8 @@ class PatternModel(object):
         for data in input_list:
             feature = None
             p_count = 0
+            # 这里试试先分词
+            data = jieba.cut(data)
             for char in data:
                 if char not in word_embed:
                     char_embed = np.zeros(300)
@@ -233,12 +248,16 @@ class PatternModel(object):
 
         self.clf.fit(feature, label)
 
-    def train_single_pattern_model(self, input_text, input_label_data):
-        start_indx = input_label_data[0]
-        end_indx = input_label_data[0] + len(input_label_data[1])
-        start_context = input_text[:start_indx]
-        core_data = input_label_data[1]
-        end_context = input_text[end_indx:]
+    # 相似方式
+    def train_similarity_model(self, input_positive_list):
+        self.word_embed_feature = self.generate_feature(input_positive_list)
+
+    # def train_single_pattern_model(self, input_text, input_label_data):
+    #     start_indx = input_label_data[0]
+    #     end_indx = input_label_data[0] + len(input_label_data[1])
+    #     start_context = input_text[:start_indx]
+    #     core_data = input_label_data[1]
+    #     end_context = input_text[end_indx:]
 
     def build_pattern_tree(self, input_pattern_start, input_pattern_end, input_match_list, start_len, end_len):
         filter_char = [")", "*", "+", "?", "(", "-"]
@@ -258,7 +277,9 @@ class PatternModel(object):
             match_res = re.findall(pattern, self.train_text[text_i])
             if len(match_res) == 1 and match_res[0] == self.train_label[text_i][1]:
                 match_count += 1
-        if match_count == len(input_match_list):
+
+        # 这里增加了阈值判断，避免分支过多
+        if match_count*1.0/len(input_match_list) > tree_shreshold:
             self.n_pattern_list.append((pattern, input_match_list))
         else:
             pattern_statis = dict()
@@ -319,6 +340,7 @@ class PatternModel(object):
             self.max_len = max(self.max_len, len(core_data))
 
         self.train_core_model(self.core_list, negative_span)
+        self.train_similarity_model(self.core_list)
         for (start_p, end_p), v in pattern_statis.items():
             if start_p == "^" and end_p == "$":
                 continue
@@ -329,39 +351,39 @@ class PatternModel(object):
             else:
                 self.build_pattern_tree(start_p, end_p, v, 1, 1)
 
-        # pattern_list_value = [(p, len(c)) for p, c in self.n_pattern_list]
-        # pattern_list_value.sort(key=lambda x: x[1], reverse=True)
-        # print("pattern_num:", len(pattern_list_value))
 
-        pattern_list = [(p[0], p[1], len(c)) for p, c in pattern_statis.items()]
 
-        pattern_list.sort()
-        pattern_list_value = []
-        last = None
-
-        for p1, p2, c in pattern_list:
-            if p1 in filter_char:
-                p1 = "\\{}".format(p1)
-            if p2 in filter_char:
-                p2 = "\\{}".format(p2)
-            if last is not None:
-                if last[0] != p1:
-                    pattern_list_value.append(last)
-                    last = (p1, [p2], c)
-                else:
-                    last = (p1, [p2]+last[1], c+last[2])
-            else:
-                last = (p1, [p2], c)
-        if last:
-            pattern_list_value.append(last)
-
-        pattern_list_value.sort(key=lambda x: x[2], reverse=True)
-        for p1, p2, _ in pattern_list_value:
-            pattern = r"{0}(.+?)[{1}]".format(p1, "".join(p2))
-            self.pattern_list.append(pattern)
-        # self.pattern_list = [p for p, _ in pattern_list_value]
+        # pattern_list = [(p[0], p[1], len(c)) for p, c in pattern_statis.items()]
         #
-        # self.core_pattern = [single_pattern(span) for span in self.core_list]
+        # pattern_list.sort()
+        # pattern_list_value = []
+        # last = None
+        #
+        # for p1, p2, c in pattern_list:
+        #     if p1 in filter_char:
+        #         p1 = "\\{}".format(p1)
+        #     if p2 in filter_char:
+        #         p2 = "\\{}".format(p2)
+        #     if last is not None:
+        #         if last[0] != p1:
+        #             pattern_list_value.append(last)
+        #             last = (p1, [p2], c)
+        #         else:
+        #             last = (p1, [p2]+last[1], c+last[2])
+        #     else:
+        #         last = (p1, [p2], c)
+        # if last:
+        #     pattern_list_value.append(last)
+        #
+        # pattern_list_value.sort(key=lambda x: x[2], reverse=True)
+        # for p1, p2, _ in pattern_list_value:
+        #     pattern = r"{0}(.+?)[{1}]".format(p1, "".join(p2))
+        #     self.pattern_list.append(pattern)
+
+        pattern_list_value = [(p, len(c)) for p, c in self.n_pattern_list]
+        pattern_list_value.sort(key=lambda x: x[1], reverse=True)
+        print("pattern_num:", len(pattern_list_value))
+        self.pattern_list = [p for p, _ in pattern_list_value]
 
     def calculate(self, input_str):
         score = 0.0
@@ -374,6 +396,17 @@ class PatternModel(object):
     #     score = 0.0
     #     for c_pattern in self.core_pattern:
     #         if re.fullmatch(c_pattern, )
+
+    def calculate_word_embed_sim(self, input_span_feature):
+        assert len(self.word_embed_feature) > 0
+        res_ind = -1
+        res_score = -1
+        for iv_ind, span_feature in enumerate(input_span_feature):
+            score = max([cosine_distance(span_feature, cmp_embed) for cmp_embed in self.word_embed_feature])
+            if score > res_score:
+                res_score = score
+                res_ind = iv_ind
+        return res_ind, res_score
 
     def predict(self, input_text):
         predict_res = []
@@ -409,8 +442,14 @@ class PatternModel(object):
                 inx = 0
                 extract_span_list = [e_info[1] for e_info in extract_infos]
                 extract_span_feature = self.generate_feature(extract_span_list)
-                extract_span_res = self.clf.predict_proba(extract_span_feature)
-                inx = np.argmax(extract_span_res[:,1])
+                # extract_span_res = self.clf.predict_proba(extract_span_feature)
+                # inx = np.argmax(extract_span_res[:,1])
+                assert len(extract_span_feature) > 0
+                inx, match_score = self.calculate_word_embed_sim(extract_span_feature)
+
+                if inx == -1:
+                    inx = 0
+                print("max {0} score is {1} ".format(extract_infos_reverse[inx][1], match_score))
 
                 extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
             predict_res.append(extract)
@@ -485,7 +524,7 @@ logger.info("train hard precision: {0} recall: {1} f1_value: {2}".format(train_h
 
 train_soft_p_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_pre_count"]
 train_soft_r_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_real_count"]
-train_soft_f1_value = 2*train_hard_p_value*train_hard_r_value/(train_soft_p_value+train_soft_r_value)
+train_soft_f1_value = 2*train_soft_p_value*train_soft_r_value/(train_soft_p_value+train_soft_r_value)
 
 logger.info("train soft precision: {0} recall: {1} f1_value: {2}".format(train_soft_p_value, train_soft_r_value, train_soft_f1_value))
 
