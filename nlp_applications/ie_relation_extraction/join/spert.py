@@ -10,6 +10,7 @@
 
 
 """
+import json
 import pickle
 import numpy as np
 import tensorflow as tf
@@ -430,10 +431,10 @@ class SpERt(tf.keras.models.Model):
 
         entity_span_list = []
         for i, ix in enumerate(entity_list):
-            entity_span_list.append(i)
-            # if ix != tf.cast(0, dtype=tf.int64):
-            #     entity_span_list.append(i)
-        entity_span_list = entity_span_list[:10]
+            # entity_span_list.append(i)
+            if ix != tf.cast(0, dtype=tf.int64):
+                entity_span_list.append(i)
+        # entity_span_list = entity_span_list[:10]
         relations_entity = []
         relation_masks = []
         relations_num = 0
@@ -466,18 +467,25 @@ class SpERt(tf.keras.models.Model):
         entity_list = tf.argmax(entity_clf, axis=-1)
         entity_list = entity_list.numpy()
 
-        relations_entity, relation_mask, relation_nums = self.filter_span(entity_clf, input_entity_start_end, input_max_len)
-        if relations_entity.shape[0]:
-            relation_feature = build_relation_feature(h, entity_spans_pool, relations_entity, size_embeddings, relation_mask,
-                                                      relation_nums)
-            rel_clf = self.rel_classifier(relation_feature)
-            rel_clf_argmax = tf.argmax(rel_clf, axis=-1)
+        entity_nums_numpy = entity_nums.numpy()
+        start = 0
+        batch_res = []
+        for e_num in entity_nums_numpy:
 
-            rel_res = [(relations_entity[i].numpy()[0], relations_entity[i].numpy()[1], label) for i, label in enumerate(rel_clf_argmax.numpy())]
-            rel_res = [(input_entity_start_end[si], entity_list[si], input_entity_start_end[oi], entity_list[oi], p) for si, oi, p in rel_res if p]
-            return rel_res
-        else:
-            return []
+            rel_res = []
+            relations_entity, relation_mask, relation_nums = self.filter_span(entity_clf[start:e_num[0]], input_entity_start_end[start:e_num[0]], input_max_len)
+            if relations_entity.shape[0]:
+                relation_feature = build_relation_feature(h, entity_spans_pool, relations_entity, size_embeddings, relation_mask,
+                                                          relation_nums)
+                rel_clf = self.rel_classifier(relation_feature)
+                rel_clf_argmax = tf.argmax(rel_clf, axis=-1)
+
+                rel_res = [(relations_entity[i].numpy()[0], relations_entity[i].numpy()[1], label) for i, label in enumerate(rel_clf_argmax.numpy())]
+                rel_res = [(input_entity_start_end[si], entity_list[si], input_entity_start_end[oi], entity_list[oi], p) for si, oi, p in rel_res if p]
+
+            batch_res.append(rel_res)
+            start = e_num[0]
+        return batch_res
 
 
 
@@ -544,11 +552,13 @@ model_path = "D:\\tmp\spert_model\\check"
 #             spert.save_weights(model_path, save_format='tf')
 
 
+test_batch_num = 1
 spert.load_weights(model_path)
-batch_data_iter = get_test_sample_data(1)
+batch_data_iter = get_test_sample_data(test_batch_num)
 submit_res = []
 batch_i = 0
 for i, batch_data in enumerate(batch_data_iter):
+    print("batch {} start".format(i))
     pres = spert.predict(batch_data["encodings"],
                                batch_data["context_masks"],
                                batch_data["entity_masks"],
@@ -556,11 +566,12 @@ for i, batch_data in enumerate(batch_data_iter):
                                batch_data["entity_num"],
                                batch_data["entity_start_end"],
                                batch_data["max_len"])
-    for j in range(batch_num):
-        doc = data_loader.test_documents[i*batch_num+j]
+    for j in range(test_batch_num):
+        n_pres = pres[j]
+        doc = data_loader.test_documents[i*test_batch_num+j]
         i_text = doc.raw_text
         spo_list = []
-        for sop in pres:
+        for sop in n_pres:
             sub_i, sub_j = sop[0]
             sub_type = sop[1]
             obj_i, obj_j = sop[2]
@@ -582,9 +593,12 @@ for i, batch_data in enumerate(batch_data_iter):
             "text": i_text,
             "spo_list": spo_list
         }
-        submit_res.append(single_spo)
+        print(single_spo)
+        submit_res.append(json.dumps(single_spo))
 
 
+with open("D:\\tmp\submit_data\\duie.json", "w") as f:
+    f.write("\n".join(submit_res))
 
 
 
