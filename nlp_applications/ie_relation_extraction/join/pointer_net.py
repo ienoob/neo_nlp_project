@@ -120,18 +120,34 @@ class PointerNet(tf.keras.models.Model):
         return sub_preds, po_preds
 
 
+boundaries = [100000, 110000]
+values = [0.01, 0.001, 0.001]
+
+lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(boundaries, values)
 
 pm_model = PointerNet()
 data_iter = DataIterator(data_loader)
-loss_func = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-optimizer = tf.keras.optimizers.Adam()
+loss_fun = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+
+optimizer = tf.keras.optimizers.Adam(lr_schedule)
+
+
+def loss_func(input_y, logits, input_mask):
+    # mask = math_ops.not_equal(input_mask, 0)
+    # loss_va = loss_fun(input_y, logits)
+    # loss_va = loss_fun(input_y, logits)
+    loss_va = tf.keras.losses.mse(input_y, logits)
+
+    return tf.reduce_mean(loss_va)
+
+
 
 @tf.function(experimental_relax_shapes=True)
 def train_step(input_x, input_sub_span, input_mask, input_sub_label, input_po_label):
     with tf.GradientTape() as tape:
         sub_logits, po_logits = pm_model(input_x, input_sub_span, mask=input_mask)
 
-        lossv = loss_func(input_sub_label, sub_logits) + loss_func(input_po_label, po_logits)
+        lossv = loss_func(input_sub_label, sub_logits, input_mask) + loss_func(input_po_label, po_logits, input_mask)
     variables = pm_model.variables
     gradients = tape.gradient(lossv, variables)
     optimizer.apply_gradients(zip(gradients, variables))
