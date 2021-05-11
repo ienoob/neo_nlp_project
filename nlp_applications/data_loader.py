@@ -303,7 +303,7 @@ class Entity(object):
 
 class Relation(object):
 
-    def __init__(self, input_id, input_sub, input_obj):
+    def __init__(self, input_id, input_sub: Entity, input_obj:Entity):
         self._id = input_id
         self._relation_sub = input_sub
         self._relation_obj = input_obj
@@ -452,6 +452,9 @@ class LoaderDuie2Dataset(object):
         self.subject2id = dict()
         self.object2id = dict()
         self.entity2id = dict()
+        self.triple_set = set()
+        self.entity_couple_set = set()
+        self.max_seq_len = 0
 
         for schema in schema_data_list:
             predicate = schema["predicate"]
@@ -472,6 +475,9 @@ class LoaderDuie2Dataset(object):
             if object not in self.entity2id:
                 self.entity2id[object] = len(self.entity2id)
 
+            self.triple_set.add((self.entity2id[subject], self.relation2id[predicate], self.entity2id[object]))
+            self.entity_couple_set.add((self.entity2id[subject], self.entity2id[object]))
+
         self.id2entity = {v:k for k, v in self.entity2id.items()}
         self.id2relation = {v:k for k, v in self.relation2id.items()}
 
@@ -484,6 +490,7 @@ class LoaderDuie2Dataset(object):
         for i, train_data in enumerate(train_data_list):
 
             self.data_len += 1
+            self.max_seq_len = max(self.max_seq_len, len(train_data["text"]))
             train_text = train_data["text"]
             train_text_id = []
             for tt in train_text:
