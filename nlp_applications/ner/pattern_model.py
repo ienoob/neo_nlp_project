@@ -15,6 +15,7 @@ import json
 import logging
 import jieba
 import numpy as np
+from pyhanlp import HanLP
 from nlp_applications.data_loader import load_json_line_data
 from nlp_applications.utils import load_word_vector
 from sklearn.linear_model import LogisticRegression
@@ -103,7 +104,9 @@ def soft_score_res(real_data, predict_data):
 
 def sample_data(input_event_type, input_event_role, data_source):
     data_list = []
+    text_list = []
     for data in data_source:
+        arguments = set()
         for event in data["event_list"]:
             if event["event_type"] != input_event_type:
                 continue
@@ -111,8 +114,11 @@ def sample_data(input_event_type, input_event_role, data_source):
                 if arg["role"] != input_event_role:
                     continue
                 data_list.append((data["text"], arg["argument_start_index"], arg["argument"]))
+                arguments.add((arg["argument_start_index"], arg["argument"]))
+        if arguments:
+            text_list.append((data["text"], list(arguments)))
 
-    return data_list
+    return data_list, text_list
 
 
 def bm25(query, doc_list):
@@ -248,9 +254,22 @@ class PatternModel(object):
 
         self.clf.fit(feature, label)
 
-    # 相似方式
+    # 相似方式, 词向量相似度
     def train_similarity_model(self, input_positive_list):
         self.word_embed_feature = self.generate_feature(input_positive_list)
+
+    def train_similarity_model_v2(self):
+        # 1 最简单，字一样就行
+        word_dict = dict()
+        # 2 高级一点，将一些符号转化为一些统一标识。 例如：如果是字母则表示为a-zA-Z, 如果是数字则表示为\d, [\u4e00-\u9fa5] [\x80-\xff] 中文
+
+        # 3 词性
+
+        # 4 句法特征
+
+        # 5 通用ner 特性
+
+        # 6 词向量特征
 
     # def train_single_pattern_model(self, input_text, input_label_data):
     #     start_indx = input_label_data[0]
@@ -279,7 +298,7 @@ class PatternModel(object):
                 match_count += 1
 
         # 这里增加了阈值判断，避免分支过多
-        if match_count*1.0/len(input_match_list) > tree_shreshold:
+        if match_count*1.0/len(input_match_list) >= tree_shreshold:
             self.n_pattern_list.append((pattern, input_match_list))
         else:
             pattern_statis = dict()
@@ -350,7 +369,6 @@ class PatternModel(object):
                 self.build_pattern_tree(start_p, end_p, v, 1, 0)
             else:
                 self.build_pattern_tree(start_p, end_p, v, 1, 1)
-
 
 
         # pattern_list = [(p[0], p[1], len(c)) for p, c in pattern_statis.items()]
@@ -487,58 +505,59 @@ def calculate_result(input_eval_dict, hard_eval, soft_eval):
     input_eval_dict["soft_real_count"] += soft_eval["d_count"]
 
 
-for schema in schema_data:
-    event_type = schema["event_type"]
-    for role in schema["role_list"]:
-        role_value = role["role"]
+if __name__ == "__main__":
+    for schema in schema_data:
+        event_type = schema["event_type"]
+        for role in schema["role_list"]:
+            role_value = role["role"]
 
-        test_train = sample_data(event_type, role_value, train_data)
-        test_eval = sample_data(event_type, role_value, eval_data)
-        print("event ", event_type, " start, role ", role_value, " start, train data, ", len(test_train))
-        if len(test_train) == 0:
-            continue
-        test_train_feature = [d[0] for d in test_train]
-        test_train_label = [(d[1],d[2]) for d in test_train]
+            test_train, _ = sample_data(event_type, role_value, train_data)
+            test_eval, _ = sample_data(event_type, role_value, eval_data)
+            print("event ", event_type, " start, role ", role_value, " start, train data, ", len(test_train))
+            if len(test_train) == 0:
+                continue
+            test_train_feature = [d[0] for d in test_train]
+            test_train_label = [(d[1],d[2]) for d in test_train]
 
-        test_eval_feature = [d[0] for d in test_eval]
-        test_eval_label = [(d[1],d[2]) for d in test_eval]
-        pt = PatternModel()
-        pt.fit(test_train_feature, test_train_label)
-        train_pres = pt.predict(test_train_feature)
-        eval_pres = pt.predict(test_eval_feature)
+            test_eval_feature = [d[0] for d in test_eval]
+            test_eval_label = [(d[1], d[2]) for d in test_eval]
+            pt = PatternModel()
+            pt.fit(test_train_feature, test_train_label)
+            train_pres = pt.predict(test_train_feature)
+            eval_pres = pt.predict(test_eval_feature)
 
-        train_hard_eval = hard_score_res(test_train_label, train_pres)
-        train_soft_eval = soft_score_res(test_train_label, train_pres)
+            train_hard_eval = hard_score_res(test_train_label, train_pres)
+            train_soft_eval = soft_score_res(test_train_label, train_pres)
 
-        eval_hard_eval = hard_score_res(test_eval_label, eval_pres)
-        eval_soft_eval = soft_score_res(test_eval_label, eval_pres)
+            eval_hard_eval = hard_score_res(test_eval_label, eval_pres)
+            eval_soft_eval = soft_score_res(test_eval_label, eval_pres)
 
-        calculate_result(train_eval_dict, train_hard_eval, train_soft_eval)
-        calculate_result(eval_eval_dict, eval_hard_eval, eval_soft_eval)
+            calculate_result(train_eval_dict, train_hard_eval, train_soft_eval)
+            calculate_result(eval_eval_dict, eval_hard_eval, eval_soft_eval)
 
-train_hard_p_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_pre_count"]
-train_hard_r_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_real_count"]
-train_hard_f1_value = 2*train_hard_p_value*train_hard_r_value/(train_hard_p_value+train_hard_r_value)
+    train_hard_p_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_pre_count"]
+    train_hard_r_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_real_count"]
+    train_hard_f1_value = 2*train_hard_p_value*train_hard_r_value/(train_hard_p_value+train_hard_r_value)
 
-logger.info("train hard precision: {0} recall: {1} f1_value: {2}".format(train_hard_p_value, train_hard_r_value, train_hard_f1_value))
+    logger.info("train hard precision: {0} recall: {1} f1_value: {2}".format(train_hard_p_value, train_hard_r_value, train_hard_f1_value))
 
-train_soft_p_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_pre_count"]
-train_soft_r_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_real_count"]
-train_soft_f1_value = 2*train_soft_p_value*train_soft_r_value/(train_soft_p_value+train_soft_r_value)
+    train_soft_p_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_pre_count"]
+    train_soft_r_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_real_count"]
+    train_soft_f1_value = 2*train_soft_p_value*train_soft_r_value/(train_soft_p_value+train_soft_r_value)
 
-logger.info("train soft precision: {0} recall: {1} f1_value: {2}".format(train_soft_p_value, train_soft_r_value, train_soft_f1_value))
+    logger.info("train soft precision: {0} recall: {1} f1_value: {2}".format(train_soft_p_value, train_soft_r_value, train_soft_f1_value))
 
-soft_hard_p_value = eval_eval_dict["hard_hit_count"]/eval_eval_dict["hard_pre_count"]
-soft_hard_r_value = eval_eval_dict["hard_hit_count"]/eval_eval_dict["hard_real_count"]
-soft_hard_f1_value = 2*soft_hard_p_value*soft_hard_r_value/(soft_hard_p_value+soft_hard_r_value)
+    soft_hard_p_value = eval_eval_dict["hard_hit_count"]/eval_eval_dict["hard_pre_count"]
+    soft_hard_r_value = eval_eval_dict["hard_hit_count"]/eval_eval_dict["hard_real_count"]
+    soft_hard_f1_value = 2*soft_hard_p_value*soft_hard_r_value/(soft_hard_p_value+soft_hard_r_value)
 
-logger.info("eval hard precision: {0} recall: {1} f1_value: {2}".format(soft_hard_p_value, soft_hard_r_value, soft_hard_f1_value))
+    logger.info("eval hard precision: {0} recall: {1} f1_value: {2}".format(soft_hard_p_value, soft_hard_r_value, soft_hard_f1_value))
 
-soft_soft_p_value = eval_eval_dict["soft_hit_count"]/eval_eval_dict["soft_pre_count"]
-soft_soft_r_value = eval_eval_dict["soft_hit_count"]/eval_eval_dict["soft_real_count"]
-soft_soft_f1_value = 2*soft_soft_p_value*soft_soft_r_value/(soft_soft_p_value+soft_soft_r_value)
+    soft_soft_p_value = eval_eval_dict["soft_hit_count"]/eval_eval_dict["soft_pre_count"]
+    soft_soft_r_value = eval_eval_dict["soft_hit_count"]/eval_eval_dict["soft_real_count"]
+    soft_soft_f1_value = 2*soft_soft_p_value*soft_soft_r_value/(soft_soft_p_value+soft_soft_r_value)
 
-logger.info("eval soft precision: {0} recall: {1} f1_value: {2}".format(soft_soft_p_value, soft_soft_r_value, soft_soft_f1_value))
+    logger.info("eval soft precision: {0} recall: {1} f1_value: {2}".format(soft_soft_p_value, soft_soft_r_value, soft_soft_f1_value))
 
 # p_value = hit_count/pred_count
 # r_value = hit_count/real_count
