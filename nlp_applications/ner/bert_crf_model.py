@@ -68,7 +68,6 @@ class BertCrfModel(tf.keras.Model):
     def __init__(self, inner_bert_model_name):
         super(BertCrfModel, self).__init__()
         config = BertConfig.from_pretrained(inner_bert_model_name, cache_dir=None)
-        print(config)
         self.bert_model = TFBertModel.from_pretrained(inner_bert_model_name)
         self.bert_model = TFBertModel(config)
         self.transition_params = tf.Variable(tf.random.uniform(shape=(class_num, class_num)))
@@ -89,6 +88,8 @@ class BertCrfModel(tf.keras.Model):
             return out_tags, text_lens, log_likelihood
         else:
             return out_tags, text_lens
+
+
 
 
 bert_crf_model = BertCrfModel(bert_model_name)
@@ -123,6 +124,7 @@ def train_step(input_xx, input_yy, input_mask):
     return loss_v
 
 batch_num = 10
+bert_crf_model_path = "D:\\tmp\\bert_crf\\model"
 data_iterator = DataIterator(msra_data, batch_num)
 epoch = 5
 for ep in range(epoch):
@@ -130,6 +132,31 @@ for ep in range(epoch):
     for batch_i, batch in enumerate(data_iterator):
         loss = train_step(batch["sentence_id"], batch["label_id"], batch["sentence_mask"])
 
-        if batch_i % 10 == 0:
+        if batch_i % 100 == 0:
             print("epoch {0} batch {1} loss is {2}".format(ep, batch_i, loss))
+            bert_crf_model.save_weights(bert_crf_model_path, save_format='tf')
 
+
+def predict(input_s_list):
+    # max_v_len = max([len(input_s) for input_s in input_s_list])
+    dataset = tf.keras.preprocessing.sequence.pad_sequences([data_iterator.tokenizer.encode(input_str) for input_str in input_s_list], padding='post', maxlen=512)
+    logits, text_lens = bert_crf_model.predict(dataset)
+    paths = []
+    for logit, text_len in zip(logits, text_lens):
+        viterbi_path, _ = viterbi_decode(logit[:text_len], bert_crf_model.transition_params)
+        paths.append(viterbi_path)
+
+    output_label = []
+    for i, output_id in enumerate(paths):
+        olen = len(output_id)
+        ilen = len(input_s_list[i])
+        if olen < ilen:
+            output_label.append([msra_data.id2label[o] for o in output_id]+["O"]*(ilen-olen))
+        else:
+            output_label.append([msra_data.id2label[o] for o in output_id][:ilen])
+    # output_label = [[id2label[o] for o in output_id] for i, output_id in
+    #                 enumerate(paths)]
+
+    print(output_label[0])
+
+    return output_label

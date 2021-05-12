@@ -36,7 +36,8 @@ eval_data = load_json_line_data(eval_data_path)
 train_data = list(train_data)
 eval_data = list(eval_data)
 
-word_embed = load_word_vector(word_embed_path)
+# word_embed = load_word_vector(word_embed_path)
+word_embed = {}
 logger.info("word2vec is load")
 
 # for schema in schema_data:
@@ -354,7 +355,7 @@ class PatternModel(object):
     #     end_context = input_text[end_indx:]
 
     def build_pattern_tree(self, input_pattern_start, input_pattern_end, input_match_list, start_len, end_len):
-        filter_char = [")", "*", "+", "?", "(", "-"]
+        filter_char = [")", "*", "+", "?", "(", "-", "|"]
         input_pattern_start_n = []
         for p in input_pattern_start:
             if p in filter_char:
@@ -366,15 +367,53 @@ class PatternModel(object):
                 p = "\\{}".format(p)
             input_pattern_end_n.append(p)
         pattern = r"{0}(.+?){1}".format("".join(input_pattern_start_n), "".join(input_pattern_end_n))
+
         match_count = 0
+        inner_not_match_list = []
+        inner_match_list = []
         for text_i in input_match_list:
-            match_res = re.findall(pattern, self.train_text[text_i])
+            match_res = re.findall(pattern, self.train_text[text_i], flags=re.S)
             if len(match_res) == 1 and match_res[0] == self.train_label[text_i][1]:
                 match_count += 1
+                inner_match_list.append(text_i)
+            else:
+                inner_not_match_list.append(text_i)
 
         # 这里增加了阈值判断，避免分支过多
         if match_count*1.0/len(input_match_list) >= tree_shreshold:
-            self.n_pattern_list.append((pattern, input_match_list))
+            self.n_pattern_list.append((pattern, inner_match_list))
+            if inner_not_match_list:
+                pattern_statis = dict()
+                for text_i in inner_not_match_list:
+                    start_i = self.train_label[text_i][0]
+                    end_i = start_i + len(self.train_label[text_i][1])
+                    if start_i - start_len - 1 < 0 and end_i + end_len >= len(self.train_text[text_i]):
+                        continue
+                    if start_i - start_len - 1 < 0:
+                        p_last = input_pattern_end + self.train_text[text_i][end_i + end_len]
+                        pattern_statis.setdefault((input_pattern_start, p_last), [])
+                        pattern_statis[(input_pattern_start, p_last)].append(text_i)
+
+                    elif end_i + end_len >= len(self.train_text[text_i]):
+                        p_first = self.train_text[text_i][start_i - start_len - 1] + input_pattern_start
+                        pattern_statis.setdefault((p_first, input_pattern_end), [])
+                        pattern_statis[(p_first, input_pattern_end)].append(text_i)
+                    else:
+                        if start_len == end_len:
+                            p_first = self.train_text[text_i][start_i - start_len - 1] + input_pattern_start
+                            pattern_statis.setdefault((p_first, input_pattern_end), [])
+                            pattern_statis[(p_first, input_pattern_end)].append(text_i)
+                        else:
+                            p_last = input_pattern_end + self.train_text[text_i][end_i + end_len]
+                            pattern_statis.setdefault((input_pattern_start, p_last), [])
+                            pattern_statis[(input_pattern_start, p_last)].append(text_i)
+
+                for k, v in pattern_statis.items():
+                    sub_start, sub_end = k
+                    if len(sub_start) > len(input_pattern_start):
+                        self.build_pattern_tree(sub_start, sub_end, v, start_len + 1, end_len)
+                    else:
+                        self.build_pattern_tree(sub_start, sub_end, v, start_len, end_len + 1)
         else:
             pattern_statis = dict()
             for text_i in input_match_list:
@@ -446,6 +485,8 @@ class PatternModel(object):
                 self.build_pattern_tree(start_p, end_p, v, 1, 1)
 
 
+
+
         # pattern_list = [(p[0], p[1], len(c)) for p, c in pattern_statis.items()]
         #
         # pattern_list.sort()
@@ -505,7 +546,7 @@ class PatternModel(object):
         filter_span.sort(key=lambda x: x[1], reverse=True)
         filter_span_score = [(k, v) for k, v in filter_span if v>inner_threshold]
         if len(filter_span_score):
-            return filter_span_score[:3]
+            return filter_span_score[:2]
         else:
             return filter_span[:1]
 
@@ -527,7 +568,6 @@ class PatternModel(object):
             return filter_span[:1]
 
 
-
     def predict(self, input_text):
         predict_res = []
         for text in input_text:
@@ -535,10 +575,10 @@ class PatternModel(object):
             extract_infos = dict()
             for pt in self.pattern_list:
                 try:
-                    gf = re.finditer(pt, text)
+                    gf = re.finditer(pt, text, flags=re.S)
                     for gfi in gf:
-                        e_span = gfi.group(1).strip()
-                        if e_span == "":
+                        e_span = gfi.group(1)
+                        if e_span.strip() == "":
                             continue
                         if len(e_span) > self.max_len:
                             continue
@@ -575,6 +615,9 @@ class PatternModel(object):
                 for inx, e_score in extract_span_res:
                     extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
                     extract_list.append(extract)
+            # for inx in range(len(extract_infos_reverse)):
+            #     extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
+            #     extract_list.append(extract)
             predict_res.append(extract_list)
 
         return predict_res
@@ -609,16 +652,31 @@ def calculate_result(input_eval_dict, hard_eval, soft_eval):
     input_eval_dict["soft_pre_count"] += soft_eval["p_count"]
     input_eval_dict["soft_real_count"] += soft_eval["d_count"]
 
+# 这是用来检查，答案是否在抽取的片段中
+def check_if_answer_in(real_ans, pred_ans):
+    assert len(real_ans) == len(pred_ans)
+
+    for i, ra in enumerate(real_ans):
+        pa = pred_ans[i]
+        pa_set = set(pa)
+        for ri in ra:
+            if ri not in pa_set:
+                print(ra, pa)
+                raise Exception
+
 
 if __name__ == "__main__":
+
     for schema in schema_data:
         event_type = schema["event_type"]
         for role in schema["role_list"]:
             role_value = role["role"]
+            # if event_type != "灾害/意外-车祸" or role_value != "地点":
+            #     continue
 
             test_train, test_train_data, test_train_label = sample_data(event_type, role_value, train_data)
             test_eval, test_eval_data, test_eval_label = sample_data(event_type, role_value, eval_data)
-            print("event ", event_type, " start, role ", role_value, " start, train data, ", len(test_train))
+            logger.info("event {0} start, role {1} start, train_data {2}".format(event_type, role_value, len(test_train)))
             if len(test_train) == 0:
                 continue
             test_train_feature = [d[0] for d in test_train]
@@ -631,10 +689,15 @@ if __name__ == "__main__":
             train_pres = pt.predict(test_train_data)
             eval_pres = pt.predict(test_eval_data)
 
+            # check_if_answer_in(test_train_label, train_pres)
+            # logger.info("event ", event_type, " start, role ", role_value, " end")
+
             train_hard_eval = hard_score_res_v2(test_train_label, train_pres)
+            print(train_hard_eval)
             train_soft_eval = soft_score_res_v2(test_train_label, train_pres)
 
             eval_hard_eval = hard_score_res_v2(test_eval_label, eval_pres)
+            print(eval_hard_eval)
             eval_soft_eval = soft_score_res_v2(test_eval_label, eval_pres)
 
             calculate_result(train_eval_dict, train_hard_eval, train_soft_eval)
