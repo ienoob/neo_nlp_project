@@ -299,6 +299,7 @@ char_size = len(data_loader.char2id)
 size_value = 256
 embed_size = 64
 hidden_size = 64
+lstm_size = 64
 size_embed_size = 64
 relation_type = len(data_loader.relation2id)
 entity_type = len(data_loader.entity2id)
@@ -400,6 +401,8 @@ class SpERt(tf.keras.models.Model):
 
         self.embed = tf.keras.layers.Embedding(char_size, embed_size)
         self.size_embed = tf.keras.layers.Embedding(size_value, size_embed_size)
+        # 相比于原始模型，增加双向lstm 层
+        self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size, return_sequences=True))
         self.rel_classifier = tf.keras.layers.Dense(relation_type, activation="softmax")
         self.entity_classifier = tf.keras.layers.Dense(entity_type, activation="softmax")
         self.dropout = tf.keras.layers.Dropout(0.5)
@@ -428,6 +431,7 @@ class SpERt(tf.keras.models.Model):
 
     def filter_span(self, input_entity_logits, input_entity_start_end, input_max_len):
         entity_list = tf.argmax(input_entity_logits, axis=-1)
+        entity_list = entity_list.numpy()
 
         entity_span_list = []
         for i, ix in enumerate(entity_list):
@@ -443,6 +447,8 @@ class SpERt(tf.keras.models.Model):
             for j in entity_span_list:
                 os, oe = input_entity_start_end[j]
                 if i == j:
+                    continue
+                if (entity_list[i], entity_list[j]) not in data_loader.entity_couple_set:
                     continue
                 start = se if se > os else oe
                 end = os if se > os else ss
@@ -532,24 +538,24 @@ def train_step(encodings, context_masks, entity_masks, entity_sizes, entity_num,
 
 model_path = "D:\\tmp\spert_model\\check"
 
-# epoch = 100
-# for e in range(epoch):
-#     batch_data_iter = get_sample_data(batch_num)
-#     for i, batch_data in enumerate(batch_data_iter):
-#         lossv = train_step(batch_data["encodings"],
-#                            batch_data["context_masks"],
-#                            batch_data["entity_masks"],
-#                            batch_data["entity_sizes"],
-#                            batch_data["entity_num"],
-#                            batch_data["relation_entity"],
-#                            batch_data["rel_masks"],
-#                            batch_data["relation_num"],
-#                            batch_data["entity_spans"],
-#                            batch_data["relations"])
-#
-#         if i % 100 == 0:
-#             print("epoch {0} batch {1} loss value is {2}".format(e, i, lossv))
-#             spert.save_weights(model_path, save_format='tf')
+epoch = 100
+for e in range(epoch):
+    batch_data_iter = get_sample_data(batch_num)
+    for i, batch_data in enumerate(batch_data_iter):
+        lossv = train_step(batch_data["encodings"],
+                           batch_data["context_masks"],
+                           batch_data["entity_masks"],
+                           batch_data["entity_sizes"],
+                           batch_data["entity_num"],
+                           batch_data["relation_entity"],
+                           batch_data["rel_masks"],
+                           batch_data["relation_num"],
+                           batch_data["entity_spans"],
+                           batch_data["relations"])
+
+        if i % 100 == 0:
+            print("epoch {0} batch {1} loss value is {2}".format(e, i, lossv))
+            spert.save_weights(model_path, save_format='tf')
 
 
 test_batch_num = 1
@@ -557,6 +563,7 @@ spert.load_weights(model_path)
 batch_data_iter = get_test_sample_data(test_batch_num)
 submit_res = []
 batch_i = 0
+save_path = "D:\\tmp\submit_data\\duie.json"
 for i, batch_data in enumerate(batch_data_iter):
     print("batch {} start".format(i))
     pres = spert.predict(batch_data["encodings"],
@@ -577,6 +584,9 @@ for i, batch_data in enumerate(batch_data_iter):
             obj_i, obj_j = sop[2]
             obj_type = sop[3]
             pre_type = sop[4]
+
+            if (sub_type, pre_type, obj_type) not in data_loader.triple_set:
+                continue
             spo_list.append({
                 "predicate": data_loader.id2relation[pre_type],
                 "subject": i_text[sub_i:sub_j],
@@ -595,23 +605,31 @@ for i, batch_data in enumerate(batch_data_iter):
         }
         print(single_spo)
         submit_res.append(json.dumps(single_spo))
+    if i == 0:
+        with open(save_path, "w") as f:
+            f.write("\n".join(submit_res))
+    else:
+        with open(save_path, "a+") as f:
+            f.write("\n")
+            f.write("\n".join(submit_res))
+    submit_res = []
 
-save_batch_num = 1000
-save_path = "D:\\tmp\submit_data\\duie.json"
-with open(save_path, "w") as f:
-    f.write("\n".join(submit_res[:save_batch_num]))
+# save_batch_num = 1000
 
-batch_count = int(len(submit_res)//save_batch_num) + 1
-print(batch_count)
-
-for ib in range(1, batch_count):
-    ib_start = ib*save_batch_num
-    ib_end = ib*save_batch_num + save_batch_num
-    if len(submit_res[ib_start:ib_end]) == 0:
-        break
-    with open(save_path, "a+") as f:
-        f.write("\n")
-        f.write("\n".join(submit_res[ib_start:ib_end]))
+# with open(save_path, "w") as f:
+#     f.write("\n".join(submit_res[:save_batch_num]))
+#
+# batch_count = int(len(submit_res)//save_batch_num) + 1
+# print(batch_count)
+#
+# for ib in range(1, batch_count):
+#     ib_start = ib*save_batch_num
+#     ib_end = ib*save_batch_num + save_batch_num
+#     if len(submit_res[ib_start:ib_end]) == 0:
+#         break
+#     with open(save_path, "a+") as f:
+#         f.write("\n")
+#         f.write("\n".join(submit_res[ib_start:ib_end]))
 
 
 
