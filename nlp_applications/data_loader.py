@@ -636,6 +636,9 @@ class LoaderDuie2Dataset(object):
                     hit += 1
 
         return {
+            "hit": hit,
+            "d_count": d_count,
+            "p_count": p_count,
             "recall": (hit + 1e-8) / (d_count + 1e-3),
             "precision": (hit + 1e-8) / (p_count + 1e-3)
         }
