@@ -34,6 +34,7 @@ def extract_entity(input_label):
     return extract_ner
 
 
+# 这里输入的BIO类型的数据
 def metrix(true_labels, predict_labels):
     true_res = 0
     pred_res = 0
@@ -63,6 +64,5 @@ def metrix(true_labels, predict_labels):
     precision = predict_true*1.0/pred_res
 
     return recall, precision
-
 
 
