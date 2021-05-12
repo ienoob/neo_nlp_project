@@ -9,6 +9,7 @@ import tensorflow as tf
 from transformers import BertTokenizer, TFBertModel, BertConfig, TFBertMainLayer
 from nlp_applications.data_loader import LoadMsraDataV2
 from nlp_applications.ner.crf_addons import crf_log_likelihood, viterbi_decode
+from nlp_applications.ner.evaluation import metrix
 
 msra_data = LoadMsraDataV2("D:\data\\ner\\msra_ner_token_level\\")
 bert_model_name = "bert-base-chinese"
@@ -67,9 +68,9 @@ class BertCrfModel(tf.keras.Model):
 
     def __init__(self, inner_bert_model_name):
         super(BertCrfModel, self).__init__()
-        config = BertConfig.from_pretrained(inner_bert_model_name, cache_dir=None)
+        # config = BertConfig.from_pretrained(inner_bert_model_name, cache_dir=None)
         self.bert_model = TFBertModel.from_pretrained(inner_bert_model_name)
-        self.bert_model = TFBertModel(config)
+        # self.bert_model = TFBertModel(config)
         self.transition_params = tf.Variable(tf.random.uniform(shape=(class_num, class_num)))
         self.out = tf.keras.layers.Dense(class_num, activation="softmax")
 
@@ -136,7 +137,6 @@ for ep in range(epoch):
             print("epoch {0} batch {1} loss is {2}".format(ep, batch_i, loss))
             bert_crf_model.save_weights(bert_crf_model_path, save_format='tf')
 
-
 def predict(input_s_list):
     # max_v_len = max([len(input_s) for input_s in input_s_list])
     dataset = tf.keras.preprocessing.sequence.pad_sequences([data_iterator.tokenizer.encode(input_str) for input_str in input_s_list], padding='post', maxlen=512)
@@ -157,6 +157,10 @@ def predict(input_s_list):
     # output_label = [[id2label[o] for o in output_id] for i, output_id in
     #                 enumerate(paths)]
 
-    print(output_label[0])
 
     return output_label
+
+predict_labels = predict(msra_data.test_sentence_list)
+true_labels = msra_data.test_tag_list
+
+print(metrix(true_labels, predict_labels))
