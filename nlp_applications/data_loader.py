@@ -9,6 +9,9 @@
 """
 import json
 
+class LoaderDataSet(object):
+    pass
+
 class LoadMsraDataV1(object):
 
     def __init__(self, path):
@@ -63,6 +66,7 @@ class LoadMsraDataV2(object):
         for la in self.labels:
             if la not in self.label2id:
                 self.label2id[la] = len(self.label2id)
+        self.id2label = {v:k for k, v in self.label2id.items()}
 
     def get_data(self, path):
         data_list = []
@@ -107,6 +111,7 @@ class LoadMsraDataV2(object):
 
         return data_list, tag_list
 
+
 # 关系分类
 class LoaderSemEval2010Task8(object):
 
@@ -116,7 +121,6 @@ class LoaderSemEval2010Task8(object):
         self.label = ["Other", "Cause-Effect", "Component-Whole",  "Entity-Destination", "Product-Producer",
                       "Entity-Origin", "Member-Collection", "Message-Topic",
                       "Content-Container", "Instrument-Agency"]
-
 
 
 class LoaderBaiduKg2019RealtionExtraction(object):
@@ -307,7 +311,6 @@ class Relation(object):
         self._id = input_id
         self._relation_sub = input_sub
         self._relation_obj = input_obj
-
 
     @property
     def id(self):
@@ -553,6 +556,92 @@ class LoaderDuie2Dataset(object):
             relation_list = []
             doc = Document(i, test_text, test_text_id, entity_list, relation_list)
             self.test_documents.append(doc)
+        self.dev_data_list = []
+        self.dev_documents = []
+        for i, train_data in enumerate(dev_data_list):
+
+            self.data_len += 1
+            self.dev_data_list.append(train_data)
+            self.max_seq_len = max(self.max_seq_len, len(train_data["text"]))
+            train_text = train_data["text"]
+            train_text_id = []
+            for tt in train_text:
+                if tt not in self.char2id:
+                    self.char2id[tt] = len(self.char2id)
+                train_text_id.append(self.char2id[tt])
+
+            spo_list = train_data["spo_list"]
+
+            entity_list = []
+            relation_list = []
+
+            state = 0
+            for spo in spo_list:
+                sub_subject = spo["subject"]
+                sub_subject_type = spo["subject_type"]
+                try:
+                    sub_indx = train_text.index(sub_subject)
+                except Exception as e:
+                    # print(e, train_text, sub_subject)
+                    state = 1
+                    print(e)
+                    break
+
+                entity_sub = Entity(self.entity2id[sub_subject_type], sub_subject, sub_indx,
+                                    sub_indx + len(sub_subject))
+                self.entity_max_len = max(self.entity_max_len, len(sub_subject))
+
+                entity_list.append(entity_sub)
+
+                sub_object = spo["object"]["@value"]
+                sub_object_type = spo["object_type"]["@value"]
+                try:
+                    obj_indx = train_text.index(sub_object)
+                except Exception as e:
+                    # print(e, train_text, sub_object)
+                    state = 1
+                    print(e)
+                    break
+                entity_obj = Entity(self.entity2id[sub_object_type], sub_object, obj_indx,
+                                    obj_indx + len(sub_object))
+                self.entity_max_len = max(self.entity_max_len, len(sub_object))
+                entity_list.append(entity_obj)
+
+                predicate_type = spo["predicate"]
+                sub_relation = Relation(self.relation2id[predicate_type], entity_sub, entity_obj)
+                relation_list.append(sub_relation)
+            if state:
+                continue
+            doc = Document(i, train_text, train_text_id, entity_list, relation_list)
+            self.dev_documents.append(doc)
+
+    def eval_metrics(self, input_pres: list):
+        assert len(self.dev_data_list) == len(input_pres)
+        p_count = 0.0
+        d_count = 0.0
+        hit = 0.0
+
+        for i, doc in enumerate(self.dev_data_list):
+            doc_res = input_pres[i]
+            p_count += len(doc_res["spo_list"])
+            d_count += len(doc["spo_list"])
+
+            spo_set = set()
+            for spo in doc_res["spo_list"]:
+                spo_set.add((spo["subject"], spo["subject_type"], spo["object"]["@value"], spo["object_type"]["@value"], spo["predicate"]))
+
+            for doc_spo in doc.relation_list:
+                d_spo = (doc_spo["subject"], doc_spo["subject_type"], doc_spo["object"]["@value"], doc_spo["object_type"]["@value"], doc_spo["predicate"])
+                if d_spo in spo_set:
+                    hit += 1
+
+        return {
+            "recall": (hit + 1e-8) / (d_count + 1e-3),
+            "precision": (hit + 1e-8) / (p_count + 1e-3)
+        }
+
+
+
 
 
 class Argument(object):
