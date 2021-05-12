@@ -36,8 +36,8 @@ eval_data = load_json_line_data(eval_data_path)
 train_data = list(train_data)
 eval_data = list(eval_data)
 
-# word_embed = load_word_vector(word_embed_path)
-word_embed = {}
+word_embed = load_word_vector(word_embed_path)
+# word_embed = {}
 logger.info("word2vec is load")
 
 # for schema in schema_data:
@@ -214,8 +214,11 @@ def distance():
     pass
 
 
-def dtw():
-    pass
+def dtw(input_list_a, input_list_b):
+    a_len = len(input_list_a)
+    b_len = len(input_list_b)
+
+
 
 
 def max_sub_sequence(seq1, seq2):
@@ -264,7 +267,7 @@ def cosine_distance(input_a, input_b):
     return similarity
 
 
-tree_shreshold = 0.9
+tree_shreshold = 0.8
 
 
 class PatternModel(object):
@@ -297,6 +300,66 @@ class PatternModel(object):
                 continue
             return input_text[s:e]
 
+    def positive_negative_feature(self):
+        positive_span = set()
+        negative_span = set()
+
+        train_text = []
+        train_label = []
+        last_text = None
+        last_label = set()
+        for i, text in enumerate(self.train_text):
+            if text == last_text:
+                last_label.add(self.train_label[i])
+            else:
+                if last_text:
+                    train_text.append(last_text)
+                    train_label.append(last_label)
+                last_label = set()
+                last_label.add(self.train_label[i])
+                last_text = text
+        if last_text:
+            train_text.append(last_text)
+            train_label.append(last_label)
+
+        for i, text in enumerate(train_text):
+            extract_infos = dict()
+            for pt in self.pattern_list:
+                try:
+                    gf = re.finditer(pt, text, flags=re.S)
+                    for gfi in gf:
+                        e_span = gfi.group(1)
+                        if e_span.strip() == "":
+                            continue
+                        if len(e_span) > self.max_len:
+                            continue
+                            # e_span_pattern = single_pattern(e_span)
+                        if (gfi.start(1), e_span) not in extract_infos:
+                            extract_infos[(gfi.start(1), e_span)] = len(extract_infos)
+                    # g = re.search(pt, text)
+                    # if g:
+                    #     e_span = g.group(1)
+                    #     if e_span.strip():
+                    #     # e_span_pattern = single_pattern(e_span)
+                    #
+                    #         extract_infos.append((g.start(1), e_span, 0))
+                except Exception as e:
+                    print(text, pt)
+                    raise Exception
+
+            # extract_infos.sort(key=lambda x: x[2], reverse=True)
+            extract_infos_reverse = {v: k for k, v in extract_infos.items()}
+            for inx in range(len(extract_infos_reverse)):
+                extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
+                if extract in train_label[i]:
+                    positive_span.add(extract[1])
+                else:
+                    negative_span.add(extract[1])
+
+        return positive_span, negative_span
+                # extract_list.append(extract)
+
+
     def generate_feature(self, input_list):
         features = []
         for data in input_list:
@@ -318,6 +381,24 @@ class PatternModel(object):
             features.append(feature)
         return features
 
+    def generate_feature_v2(self, input_list):
+        feature = []
+        def inner_f(i_char: str):
+            if i_char.isalpha():
+                return "[a-zA-Z]"
+            elif i_char.isdigit():
+                return "\d"
+            else:
+                return i_char
+        for data in input_list:
+            inner_feature = [inner_f(d) for d in data]
+            feature.append(inner_feature)
+
+        return feature
+
+    def generate_feature_v3(self, input_list):
+        pass
+
     # 分类器方式
     def train_core_model(self, input_positive_list, input_negative_list):
         p_feature = self.generate_feature(input_positive_list)
@@ -334,7 +415,15 @@ class PatternModel(object):
     def train_similarity_model(self, input_positive_list):
         self.word_embed_feature = self.generate_feature(input_positive_list)
 
-    def train_similarity_model_v2(self):
+    def train_similarity_v2_model(self, input_positive_list):
+        word_feature = self.generate_feature_v2(input_positive_list)
+
+    def train_similarity_v3_model(self, input_positive_list):
+        pass
+
+
+    # 相似方式，
+    def train_similarity_model_all(self):
         # 1 最简单，字一样就行
         word_dict = dict()
         # 2 高级一点，将一些符号转化为一些统一标识。 例如：如果是字母则表示为a-zA-Z, 如果是数字则表示为\d, [\u4e00-\u9fa5] [\x80-\xff] 中文
@@ -448,7 +537,6 @@ class PatternModel(object):
                     self.build_pattern_tree(sub_start, sub_end, v, start_len, end_len+1)
 
     def fit(self, input_feature_data, label_datas):
-        filter_char = [")", "*", "+", "?", "(", "-"]
         pattern_statis = dict()
         # 负样本
         negative_span = []
@@ -472,8 +560,6 @@ class PatternModel(object):
 
             self.max_len = max(self.max_len, len(core_data))
 
-        self.train_core_model(self.core_list, negative_span)
-        self.train_similarity_model(self.core_list)
         for (start_p, end_p), v in pattern_statis.items():
             if start_p == "^" and end_p == "$":
                 continue
@@ -485,39 +571,16 @@ class PatternModel(object):
                 self.build_pattern_tree(start_p, end_p, v, 1, 1)
 
 
-
-
-        # pattern_list = [(p[0], p[1], len(c)) for p, c in pattern_statis.items()]
-        #
-        # pattern_list.sort()
-        # pattern_list_value = []
-        # last = None
-        #
-        # for p1, p2, c in pattern_list:
-        #     if p1 in filter_char:
-        #         p1 = "\\{}".format(p1)
-        #     if p2 in filter_char:
-        #         p2 = "\\{}".format(p2)
-        #     if last is not None:
-        #         if last[0] != p1:
-        #             pattern_list_value.append(last)
-        #             last = (p1, [p2], c)
-        #         else:
-        #             last = (p1, [p2]+last[1], c+last[2])
-        #     else:
-        #         last = (p1, [p2], c)
-        # if last:
-        #     pattern_list_value.append(last)
-        #
-        # pattern_list_value.sort(key=lambda x: x[2], reverse=True)
-        # for p1, p2, _ in pattern_list_value:
-        #     pattern = r"{0}(.+?)[{1}]".format(p1, "".join(p2))
-        #     self.pattern_list.append(pattern)
-
         pattern_list_value = [(p, len(c)) for p, c in self.n_pattern_list]
         pattern_list_value.sort(key=lambda x: x[1], reverse=True)
         print("pattern_num:", len(pattern_list_value))
         self.pattern_list = [p for p, _ in pattern_list_value]
+
+        # positive_span_value, negative_span_value = self.positive_negative_feature()
+        # if len(negative_span_value):
+        #     negative_span = list(negative_span_value)
+        # self.train_core_model(self.core_list, negative_span)
+        self.train_similarity_model(self.core_list)
 
     def calculate(self, input_str):
         score = 0.0
@@ -544,7 +607,7 @@ class PatternModel(object):
             #     res_score = score
             #     res_ind = iv_ind
         filter_span.sort(key=lambda x: x[1], reverse=True)
-        filter_span_score = [(k, v) for k, v in filter_span if v>inner_threshold]
+        filter_span_score = [(k, v) for k, v in filter_span if v > inner_threshold]
         if len(filter_span_score):
             return filter_span_score[:2]
         else:
@@ -566,7 +629,6 @@ class PatternModel(object):
             return filter_span_score
         else:
             return filter_span[:1]
-
 
     def predict(self, input_text):
         predict_res = []
@@ -615,9 +677,7 @@ class PatternModel(object):
                 for inx, e_score in extract_span_res:
                     extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
                     extract_list.append(extract)
-            # for inx in range(len(extract_infos_reverse)):
-            #     extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
-            #     extract_list.append(extract)
+
             predict_res.append(extract_list)
 
         return predict_res
