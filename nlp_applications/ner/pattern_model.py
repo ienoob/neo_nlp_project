@@ -644,7 +644,7 @@ class PatternModel(object):
         # if len(negative_span_value):
         #     negative_span = list(negative_span_value)
         # self.train_core_model(self.core_list, negative_span)
-        self.train_similarity_model_v2(self.core_list)
+        self.train_similarity_model(self.core_list)
 
     def calculate(self, input_str):
         score = 0.0
@@ -666,10 +666,7 @@ class PatternModel(object):
             #     res_ind = iv_ind
         filter_span.sort(key=lambda x: x[1], reverse=True)
         filter_span_score = [(k, v) for k, v in filter_span if v > inner_threshold]
-        if len(filter_span_score):
-            return filter_span_score[:2]
-        else:
-            return filter_span[:1]
+        return filter_span_score[:1]
 
     def calculate_word_embed_sim_v2(self, input_span_feature):
         assert len(self.word_embed_feature_v2) > 0
@@ -708,42 +705,18 @@ class PatternModel(object):
             extract_list = []
             extract_infos = dict()
             for pt in self.pattern_list:
-                try:
-                    gf = re.finditer(pt, text, flags=re.S)
-                    for gfi in gf:
-                        e_span = gfi.group(1)
-                        if e_span.strip() == "":
-                            continue
-                        if len(e_span) > self.max_len:
-                            continue
-                            # e_span_pattern = single_pattern(e_span)
-                        if (gfi.start(1), e_span) not in extract_infos:
-                            extract_infos[(gfi.start(1), e_span)] = len(extract_infos)
-                    # g = re.search(pt, text)
-                    # if g:
-                    #     e_span = g.group(1)
-                    #     if e_span.strip():
-                    #     # e_span_pattern = single_pattern(e_span)
-                    #
-                    #         extract_infos.append((g.start(1), e_span, 0))
-                except Exception as e:
-                    print(text, pt)
-                    raise Exception
+                extract_info_by_pattern(text, pt, extract_infos, self.max_len)
 
             # extract_infos.sort(key=lambda x: x[2], reverse=True)
             extract_infos_reverse = {v: k for k, v in extract_infos.items()}
             if extract_infos:
                 extract_span_list = [e_info[1] for e_info in extract_infos]
-                extract_span_feature = self.generate_feature_v2(extract_span_list)
+                extract_span_feature = self.generate_feature(extract_span_list)
                 # extract_span_res = self.calculate_classifier_score(extract_span_list)
 
                 # extract_span_res = self.calculate_word_embed_sim(extract_span_feature)
-                extract_span_res = self.calculate_word_embed_sim_v2(extract_span_feature)
+                extract_span_res = self.calculate_word_embed_sim(extract_span_feature)
 
-                # assert len(extract_span_res) > 0
-                # print(len(extract_span_res))
-                # match_span =
-                # print(len(match_span))
 
                 # inx = 0
                 # print("max {0} score is {1} ".format(extract_infos_reverse[inx][1], match_score))

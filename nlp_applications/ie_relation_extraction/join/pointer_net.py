@@ -9,25 +9,32 @@
     Joint Extraction of Entities and Relations Based on a Novel Decomposition Strategy
 
 """
+import jieba
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops import math_ops
 from nlp_applications.data_loader import LoaderDuie2Dataset, Document
+from nlp_applications.utils import load_word_vector
 
 data_path = "D:\\data\\关系抽取\\"
-
+word_embed_path = "D:\\data\\word2vec\\sgns.weibo.char\\sgns.weibo.char"
 data_loader = LoaderDuie2Dataset(data_path)
+word_embed = load_word_vector(word_embed_path)
+# word_embed = {}
 
 batch_num = 30
 vocab_size = len(data_loader.char2id)
+word_size = len(word_embed)
 predicate_num = len(data_loader.relation2id)
 embed_size = 32
+word_embed_size = 300
 lstm_size = 32
 
 
 class DataIterator(object):
     def __init__(self, input_data_loader):
         self.data_loader = input_data_loader
+        self.word2id = dict()
 
     def single_doc_processor(self, doc: Document):
         encoding = doc.text_id
@@ -55,6 +62,7 @@ class DataIterator(object):
 
     def single_test_doc_processor(self, doc: Document):
         encoding = doc.text_id
+        text = doc.raw_text
         encoding_mask = [1]*len(encoding)
 
         return {"encoding": encoding,
@@ -164,7 +172,7 @@ class PointerNet(tf.keras.models.Model):
     def __init__(self):
         super(PointerNet, self).__init__()
         self.embed = tf.keras.layers.Embedding(vocab_size, embed_size, mask_zero=True)
-        # self.word_embed = tf.keras.layers.Embedding.
+        self.word_embed = tf.keras.layers.Embedding(word_size, word_embed_size)
         self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size, return_sequences=True))
         self.sub_classifier = tf.keras.layers.Dense(2, activation="sigmoid")
         self.po_classifier = tf.keras.layers.Dense(predicate_num*2, activation="sigmoid")
