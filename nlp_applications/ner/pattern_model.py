@@ -67,6 +67,7 @@ def hard_score_res_v2(real_data, predict_data):
         "recall": (score+1e-8)/(d_count+1e-3),
         "precision": (score + 1e-8) / (p_count + 1e-3)
     }
+    matrix["f1_value"] = 2*matrix["recall"]*matrix["precision"]/(matrix["recall"]+matrix["precision"])
 
     return matrix
 
@@ -170,7 +171,7 @@ def soft_score_res_v2(real_data, predict_data):
         "recall": (score + 1e-8) / (d_count + 1e-3),
         "precision": (score + 1e-8) / (p_count + 1e-3)
     }
-
+    matrix["f1_value"] = 2 * matrix["recall"] * matrix["precision"] / (matrix["recall"] + matrix["precision"])
     return matrix
 
 
@@ -220,7 +221,7 @@ def dtw(input_list_a, input_list_b):
 
 
 
-
+# 最长子序列
 def max_sub_sequence(seq1, seq2):
     seq1_len = len(seq1)
     seq2_len = len(seq2)
@@ -234,6 +235,11 @@ def max_sub_sequence(seq1, seq2):
                 dp[i+1][j+1] = max([dp[i][j], dp[i][j+1], dp[i+1][j]])
 
     return dp[-1][-1]
+
+def max_sub_sequence_score(seq1, seq2):
+    max_seq_len = max_sub_sequence(seq1, seq2)
+
+    return max_seq_len*1.0/max(len(seq1), len(seq2))
 
 
 print(max_sub_sequence("abc", "yagbghachje"))
@@ -282,6 +288,9 @@ class PatternModel(object):
         self.train_label = []
         self.n_pattern_list = []
         self.word_embed_feature = []
+        self.word_embed_feature_v2 = []
+        self.word_poss_feature_v3 = []
+        self.word_parse_feature_v4 = []
 
     def negative_choice(self, input_text, positive_span=tuple()):
         dlen = len(input_text)
@@ -415,12 +424,20 @@ class PatternModel(object):
     def train_similarity_model(self, input_positive_list):
         self.word_embed_feature = self.generate_feature(input_positive_list)
 
-    def train_similarity_v2_model(self, input_positive_list):
-        word_feature = self.generate_feature_v2(input_positive_list)
+    def train_similarity_v1_model(self, input_positive_list):
+        pass
+
+    def train_similarity_model_v2(self, input_positive_list):
+        self.word_embed_feature_v2 = self.generate_feature_v2(input_positive_list)
 
     def train_similarity_v3_model(self, input_positive_list):
         pass
 
+    def train_similarity_v4_model(self, input_positive_list):
+        pass
+
+    def train_similarity_v5_model(self, input_positive_list):
+        pass
 
     # 相似方式，
     def train_similarity_model_all(self):
@@ -571,6 +588,7 @@ class PatternModel(object):
                 self.build_pattern_tree(start_p, end_p, v, 1, 1)
 
 
+
         pattern_list_value = [(p, len(c)) for p, c in self.n_pattern_list]
         pattern_list_value.sort(key=lambda x: x[1], reverse=True)
         print("pattern_num:", len(pattern_list_value))
@@ -580,7 +598,7 @@ class PatternModel(object):
         # if len(negative_span_value):
         #     negative_span = list(negative_span_value)
         # self.train_core_model(self.core_list, negative_span)
-        self.train_similarity_model(self.core_list)
+        self.train_similarity_model_v2(self.core_list)
 
     def calculate(self, input_str):
         score = 0.0
@@ -589,15 +607,9 @@ class PatternModel(object):
 
         return score
 
-    # def calculate_pattern_score(self, input_str):
-    #     score = 0.0
-    #     for c_pattern in self.core_pattern:
-    #         if re.fullmatch(c_pattern, )
 
     def calculate_word_embed_sim(self, input_span_feature):
         assert len(self.word_embed_feature) > 0
-        res_ind = -1
-        res_score = -1
         inner_threshold = 0.999
         filter_span = []
         for iv_ind, span_feature in enumerate(input_span_feature):
@@ -610,6 +622,23 @@ class PatternModel(object):
         filter_span_score = [(k, v) for k, v in filter_span if v > inner_threshold]
         if len(filter_span_score):
             return filter_span_score[:2]
+        else:
+            return filter_span[:1]
+
+    def calculate_word_embed_sim_v2(self, input_span_feature):
+        assert len(self.word_embed_feature_v2) > 0
+        inner_threshold = 0.5
+        filter_span = []
+        for iv_ind, span_feature in enumerate(input_span_feature):
+            score = max([max_sub_sequence_score(span_feature, cmp_embed) for cmp_embed in self.word_embed_feature_v2])
+            filter_span.append((iv_ind, score))
+            # if score > res_score:
+            #     res_score = score
+            #     res_ind = iv_ind
+        filter_span.sort(key=lambda x: x[1], reverse=True)
+        filter_span_score = [(k, v) for k, v in filter_span if v > inner_threshold]
+        if len(filter_span_score):
+            return filter_span_score[:1]
         else:
             return filter_span[:1]
 
@@ -662,10 +691,11 @@ class PatternModel(object):
             extract_infos_reverse = {v: k for k, v in extract_infos.items()}
             if extract_infos:
                 extract_span_list = [e_info[1] for e_info in extract_infos]
-                extract_span_feature = self.generate_feature(extract_span_list)
+                extract_span_feature = self.generate_feature_v2(extract_span_list)
                 # extract_span_res = self.calculate_classifier_score(extract_span_list)
 
-                extract_span_res = self.calculate_word_embed_sim(extract_span_feature)
+                # extract_span_res = self.calculate_word_embed_sim(extract_span_feature)
+                extract_span_res = self.calculate_word_embed_sim_v2(extract_span_feature)
 
                 # assert len(extract_span_res) > 0
                 # print(len(extract_span_res))
@@ -724,9 +754,11 @@ def check_if_answer_in(real_ans, pred_ans):
                 print(ra, pa)
                 raise Exception
 
-
+import time
+import json
 if __name__ == "__main__":
-
+    train_eval_info = []
+    dev_eval_info = []
     for schema in schema_data:
         event_type = schema["event_type"]
         for role in schema["role_list"]:
@@ -763,6 +795,10 @@ if __name__ == "__main__":
             calculate_result(train_eval_dict, train_hard_eval, train_soft_eval)
             calculate_result(eval_eval_dict, eval_hard_eval, eval_soft_eval)
 
+            train_eval_info.append({"hard": train_hard_eval, "sorf": train_soft_eval})
+            dev_eval_info.append({"hard": eval_hard_eval, "sorf": eval_soft_eval})
+
+
     train_hard_p_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_pre_count"]
     train_hard_r_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_real_count"]
     train_hard_f1_value = 2*train_hard_p_value*train_hard_r_value/(train_hard_p_value+train_hard_r_value)
@@ -786,6 +822,13 @@ if __name__ == "__main__":
     soft_soft_f1_value = 2*soft_soft_p_value*soft_soft_r_value/(soft_soft_p_value+soft_soft_r_value)
 
     logger.info("eval soft precision: {0} recall: {1} f1_value: {2}".format(soft_soft_p_value, soft_soft_r_value, soft_soft_f1_value))
+
+    with open("D:\\tmp\\result_save\\{}".format("train_eval_{}.json".format(int(time.time()))), "w") as f:
+        f.write("\n".join([json.dumps(sub_info) for sub_info in train_eval_info]))
+
+    with open("D:\\tmp\\result_save\\{}".format("dev_eval_{}.json".format(int(time.time()))), "w") as f:
+        f.write("\n".join([json.dumps(sub_info) for sub_info in dev_eval_info]))
+
 
 # p_value = hit_count/pred_count
 # r_value = hit_count/real_count

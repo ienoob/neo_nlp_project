@@ -66,3 +66,27 @@ def metrix(true_labels, predict_labels):
     return recall, precision
 
 
+def hard_score_res_v2(real_data, predict_data):
+    assert len(real_data) == len(predict_data)
+
+    score = 0.0
+    d_count = 0
+    p_count = 0
+    for i, rd in enumerate(real_data):
+        if len(predict_data[i]) is 0:
+            continue
+        p_count += len(predict_data[i])
+        d_count += len(real_data[i])
+
+        for rd_ele in rd:
+            if rd_ele in predict_data[i]:
+                score += 1
+    matrix = {
+        "score": score,
+        "p_count": p_count,
+        "d_count": d_count,
+        "recall": (score + 1e-8) / (d_count + 1e-3),
+        "precision": (score + 1e-8) / (p_count + 1e-3)
+    }
+
+    return matrix
