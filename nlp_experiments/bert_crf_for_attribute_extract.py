@@ -10,6 +10,7 @@ from nlp_applications.utils import load_word_vector
 from sklearn.linear_model import LogisticRegression
 from transformers import BertTokenizer, TFBertModel, BertConfig, TFBertMainLayer
 from nlp_applications.ner.crf_addons import crf_log_likelihood, viterbi_decode
+from nlp_applications.ner.evaluation import extract_entity, hard_score_res_v2
 
 logger = logging.getLogger()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -23,7 +24,7 @@ schema_data = load_json_line_data(schema_path)
 train_data = load_json_line_data(data_path)
 eval_data = load_json_line_data(eval_data_path)
 
-
+train_data = list(train_data)
 
 class BertCrfModel(tf.keras.Model):
 
@@ -33,6 +34,7 @@ class BertCrfModel(tf.keras.Model):
         self.bert_model = TFBertModel.from_pretrained(inner_bert_model_name)
         # self.bert_model = TFBertModel(config)
         self.transition_params = tf.Variable(tf.random.uniform(shape=(class_num, class_num)))
+        self.drop_out = tf.keras.layers.Dropout(0.5)
         self.out = tf.keras.layers.Dense(class_num, activation="softmax")
 
     def call(self, inputs, training=None, mask=None, labels=None):
@@ -40,6 +42,7 @@ class BertCrfModel(tf.keras.Model):
         text_lens = tf.math.reduce_sum(tf.cast(tf.math.not_equal(inputs, 0), dtype=tf.int32), axis=-1)
         outputs = self.bert_model(inputs, attention_mask=mask)
         outputs = outputs[0]
+        outputs = self.drop_out(outputs, training)
         out_tags = self.out(outputs)
 
         if labels is not None:
@@ -60,7 +63,7 @@ class ATTBertModel(object):
         self.model = BertCrfModel(bert_model_name, class_num)
 
     def fit(self, train_data, label_data, mask_data):
-        optimizer = tf.keras.optimizers.Adam()
+        optimizer = tf.keras.optimizers.Adam(1e-2)
 
         def loss_func(input_y, logits):
             cross_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
@@ -85,10 +88,12 @@ class ATTBertModel(object):
 
             return loss_v
 
-        epoch = 20
+        epoch = 200
         for ep in range(epoch):
             loss = train_step(train_data, label_data, mask_data)
-            print("loss value is {}".format(loss))
+
+            if epoch % 10 == 0:
+                print("loss value is {}".format(loss))
 
             # for batch_i, (sentence_id, label_id, sentence_mask) in enumerate(input_dataset.take(-1)):
             #     loss = train_step(sentence_id, label_id, sentence_mask)
@@ -136,8 +141,8 @@ def generate(input_data, input_label):
     tokenizer = BertTokenizer.from_pretrained(bert_model_name)
     label2id = {
         "pad": 0,
-        "B": 1,
-        "I": 2,
+        "B-E": 1,
+        "I-E": 2,
         "O": 3
     }
     sentence_list = []
@@ -148,9 +153,9 @@ def generate(input_data, input_label):
         label_value_list = input_label[i]
         loc_d = dict()
         for start, span in label_value_list:
-            loc_d[start] = "B"
+            loc_d[start] = "B-E"
             for iv in range(start+1, start+len(span)):
-                loc_d[iv] = "I"
+                loc_d[iv] = "I-E"
         sentence_id = tokenizer.encode(text_data)
         label_value = ["O"]+[loc_d.get(s_i, "O") for s_i, _ in enumerate(sentence_id)]+["O"]
         label_id = [label2id[lv] for lv in label_value]
@@ -170,11 +175,11 @@ def generate(input_data, input_label):
 
 
 
+
 for schema in schema_data:
     event_type = schema["event_type"]
     for role in schema["role_list"]:
         role_value = role["role"]
-
 
         test_train, test_train_data, test_train_label = sample_data(event_type, role_value, train_data)
         test_eval, test_eval_data, test_eval_label = sample_data(event_type, role_value, eval_data)
@@ -184,7 +189,7 @@ for schema in schema_data:
         test_train_dataset, (train_data_t, label_data_t, mask_data_t) = generate(test_train_data, test_train_label)
 
         att_model = ATTBertModel(bert_model_name, 4)
-        # att_model.fit(train_data_t, label_data_t, mask_data_t)
+        att_model.fit(train_data_t, label_data_t, mask_data_t)
 
         _, (train_data, label_data, mask_data) = generate(test_eval_data, test_eval_label)
         logits, text_lens = att_model.predict(train_data_t, mask_data_t)
@@ -193,10 +198,16 @@ for schema in schema_data:
         for logit, text_len in zip(logits, text_lens):
             viterbi_path, _ = viterbi_decode(logit[:text_len], att_model.transition_params)
             paths.append(viterbi_path)
-        print(paths)
+        id2label = {
+            0: "pad",
+            1: "B-E",
+            2: "I-E",
+            3: "O"}
+        paths2label = [[id2label[p] for p in path] for path in paths]
+        extract_info = [[(ee[0], ee[1]-ee[0]) for ee in extract_entity(path)] for path in paths2label]
+        print(extract_info)
 
+        print(hard_score_res_v2(test_train_label, extract_info))
 
-
-        break
 
     break
