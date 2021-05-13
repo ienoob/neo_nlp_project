@@ -277,6 +277,23 @@ def cosine_distance(input_a, input_b):
 tree_shreshold = 0.8
 
 
+# 正则抽取 所有数据
+def extract_info_by_pattern(input_pt, input_text, out_extract_infos, max_len=1<<32):
+    try:
+        gf = re.finditer(input_pt, input_text, flags=re.S)
+        for gfi in gf:
+            e_span = gfi.group(1)
+            if e_span.strip() == "":
+                continue
+            if len(e_span) > max_len:
+                continue
+            if (gfi.start(1), e_span) not in out_extract_infos:
+                out_extract_infos[(gfi.start(1), e_span)] = len(out_extract_infos)
+    except Exception as e:
+        print(input_text, input_pt)
+        raise Exception
+
+
 class PatternModel(object):
 
     def __init__(self):
@@ -293,7 +310,17 @@ class PatternModel(object):
         self.word_poss_feature_v3 = []
         self.word_parse_feature_v4 = []
 
+        self.parse2id = dict()
+
     def negative_choice(self, input_text, positive_span=tuple()):
+        """ 随机负采样，原理随机获得和目标词不同的区域作为负样本
+        Args:
+            input_text:
+            positive_span:
+
+        Returns:
+
+        """
         dlen = len(input_text)
         si, ei = positive_span
 
@@ -335,29 +362,8 @@ class PatternModel(object):
         for i, text in enumerate(train_text):
             extract_infos = dict()
             for pt in self.pattern_list:
-                try:
-                    gf = re.finditer(pt, text, flags=re.S)
-                    for gfi in gf:
-                        e_span = gfi.group(1)
-                        if e_span.strip() == "":
-                            continue
-                        if len(e_span) > self.max_len:
-                            continue
-                            # e_span_pattern = single_pattern(e_span)
-                        if (gfi.start(1), e_span) not in extract_infos:
-                            extract_infos[(gfi.start(1), e_span)] = len(extract_infos)
-                    # g = re.search(pt, text)
-                    # if g:
-                    #     e_span = g.group(1)
-                    #     if e_span.strip():
-                    #     # e_span_pattern = single_pattern(e_span)
-                    #
-                    #         extract_infos.append((g.start(1), e_span, 0))
-                except Exception as e:
-                    print(text, pt)
-                    raise Exception
+                extract_info_by_pattern(text, pt, extract_infos, self.max_len)
 
-            # extract_infos.sort(key=lambda x: x[2], reverse=True)
             extract_infos_reverse = {v: k for k, v in extract_infos.items()}
             for inx in range(len(extract_infos_reverse)):
                 extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
@@ -367,8 +373,8 @@ class PatternModel(object):
                     negative_span.add(extract[1])
 
         return positive_span, negative_span
-                # extract_list.append(extract)
 
+    # 生成词向量特征，最后采用平均的方式
     def generate_feature(self, input_list):
         features = []
         for data in input_list:
@@ -419,6 +425,21 @@ class PatternModel(object):
 
         return feature
 
+    # 句法特征
+    def generate_feature_v4(self, input_list):
+        feature = []
+
+        for sentence in input_list:
+
+            sentence_feature = [[cut.DEPREL for _ in cut.LEMMA] for cut in HanLP.parseDependency(sentence)]
+            inner_feature = []
+            for sf in sentence_feature:
+                inner_feature += sf
+            assert len(sentence) == len(inner_feature)
+            feature.append(inner_feature)
+
+        return feature
+
     # 分类器方式
     def train_core_model(self, input_positive_list, input_negative_list):
         p_feature = self.generate_feature(input_positive_list)
@@ -441,14 +462,19 @@ class PatternModel(object):
     def train_similarity_model_v2(self, input_positive_list):
         self.word_embed_feature_v2 = self.generate_feature_v2(input_positive_list)
 
-    def train_similarity_v3_model(self, input_positive_list):
+    def train_similarity_model_v3(self, input_positive_list):
+        word_feature_v3 = self.generate_feature_v3(input_positive_list)
+        self.word_poss_feature_v3 = [word_feature_v3[i][label[0]:label[1]] for i, label in self.train_label]
+
+    def train_similarity_model_v4(self, input_positive_list):
+        word_feature_v4 = self.generate_feature_v4(input_positive_list)
+        self.word_parse_feature_v4 = [word_feature_v4[i][label[0]:label[1]] for i, label in self.train_label]
+
+    def train_similarity_model_v5(self, input_positive_list):
         pass
 
-    def train_similarity_v4_model(self, input_positive_list):
-        pass
-
-    def train_similarity_v5_model(self, input_positive_list):
-        pass
+    def train_similarity_model_v6(self, input_positive_list):
+        self.word_embed_feature = self.generate_feature(input_positive_list)
 
     # 相似方式，
     def train_similarity_model_all(self):

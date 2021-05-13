@@ -66,6 +66,7 @@ def metrix(true_labels, predict_labels):
     return recall, precision
 
 
+# 严格结果， 要求完成重合
 def hard_score_res_v2(real_data, predict_data):
     assert len(real_data) == len(predict_data)
 
@@ -88,5 +89,51 @@ def hard_score_res_v2(real_data, predict_data):
         "recall": (score + 1e-8) / (d_count + 1e-3),
         "precision": (score + 1e-8) / (p_count + 1e-3)
     }
+    matrix["f1_value"] = 2 * matrix["recall"] * matrix["precision"] / (matrix["recall"] + matrix["precision"])
+    return matrix
 
+
+# 软评估结果, 不要求完全重合
+def soft_score_res_v2(real_data, predict_data):
+    assert len(real_data) == len(predict_data)
+    score = 0.0
+    d_count = 0
+    p_count = 0
+
+    def tiny_score(i_real, i_pres):
+        r_s_ind = i_real[0]
+        r_e_ind = i_real[0] + len(i_real[1])
+        p_s_ind = i_pres[0]
+        p_e_ind = i_pres[0] + len(i_pres[1])
+        if r_s_ind > p_s_ind or r_e_ind < p_e_ind:
+            mix_area = 0.0
+        else:
+            mix_area = min(r_e_ind, p_e_ind) - max(r_s_ind, p_s_ind)
+
+        all_area = max(r_e_ind, p_e_ind) - min(r_s_ind, p_s_ind)
+
+        return mix_area/all_area
+
+    for i, rd in enumerate(real_data):
+        pre_res = predict_data[i]
+        if len(pre_res) is 0:
+            continue
+        p_count += len(pre_res)
+        d_count += len(rd)
+        for rd_ele in rd:
+            max_score = 0.0
+            for pd_ele in pre_res:
+                e_score = tiny_score(rd_ele, pd_ele)
+                if e_score > max_score:
+                    max_score = e_score
+            score += max_score
+
+    matrix = {
+        "score": score,
+        "p_count": p_count,
+        "d_count": d_count,
+        "recall": (score + 1e-8) / (d_count + 1e-3),
+        "precision": (score + 1e-8) / (p_count + 1e-3)
+    }
+    matrix["f1_value"] = 2 * matrix["recall"] * matrix["precision"] / (matrix["recall"] + matrix["precision"])
     return matrix
