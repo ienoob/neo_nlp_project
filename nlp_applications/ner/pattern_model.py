@@ -14,6 +14,7 @@ import re
 import json
 import logging
 import jieba
+import jieba.posseg as pseg
 import numpy as np
 from pyhanlp import HanLP
 from nlp_applications.data_loader import load_json_line_data
@@ -368,7 +369,6 @@ class PatternModel(object):
         return positive_span, negative_span
                 # extract_list.append(extract)
 
-
     def generate_feature(self, input_list):
         features = []
         for data in input_list:
@@ -405,8 +405,19 @@ class PatternModel(object):
 
         return feature
 
+    # 词性特征
     def generate_feature_v3(self, input_list):
-        pass
+        feature = []
+
+        for sentence in input_list:
+
+            sentence_feature = [[cut.flag for w in cut.word] for cut in pseg.cut(sentence)]
+            inner_feature = []
+            for sf in sentence_feature:
+                inner_feature += sf
+            feature.append(inner_feature)
+
+        return feature
 
     # 分类器方式
     def train_core_model(self, input_positive_list, input_negative_list):
@@ -553,6 +564,15 @@ class PatternModel(object):
                 else:
                     self.build_pattern_tree(sub_start, sub_end, v, start_len, end_len+1)
 
+    def check_pattern(self):
+        assert len(self.n_pattern_list) > 0
+        d = [0]*len(self.train_label)
+        for _, m_list in self.n_pattern_list:
+            for m in m_list:
+                d[m] = 1
+        logger.info("data num {0} cover num {1}".format(len(self.train_label), sum(d)))
+
+
     def fit(self, input_feature_data, label_datas):
         pattern_statis = dict()
         # 负样本
@@ -586,8 +606,8 @@ class PatternModel(object):
                 self.build_pattern_tree(start_p, end_p, v, 1, 0)
             else:
                 self.build_pattern_tree(start_p, end_p, v, 1, 1)
-
-
+        # 检查模式是否全部覆盖数据
+        self.check_pattern()
 
         pattern_list_value = [(p, len(c)) for p, c in self.n_pattern_list]
         pattern_list_value.sort(key=lambda x: x[1], reverse=True)
@@ -637,10 +657,7 @@ class PatternModel(object):
             #     res_ind = iv_ind
         filter_span.sort(key=lambda x: x[1], reverse=True)
         filter_span_score = [(k, v) for k, v in filter_span if v > inner_threshold]
-        if len(filter_span_score):
-            return filter_span_score[:1]
-        else:
-            return filter_span[:1]
+        return filter_span_score[:1]
 
     def calculate_classifier_score(self, input_span_feature):
         extract_span_feature = self.generate_feature(input_span_feature)
