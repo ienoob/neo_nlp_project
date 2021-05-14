@@ -53,10 +53,10 @@ def hard_score_res_v2(real_data, predict_data):
     d_count = 0
     p_count = 0
     for i, rd in enumerate(real_data):
+        d_count += len(real_data[i])
         if len(predict_data[i]) is 0:
             continue
         p_count += len(predict_data[i])
-        d_count += len(real_data[i])
 
         for rd_ele in rd:
             if rd_ele in predict_data[i]:
@@ -153,10 +153,11 @@ def soft_score_res_v2(real_data, predict_data):
 
     for i, rd in enumerate(real_data):
         pre_res = predict_data[i]
+        d_count += len(rd)
         if len(pre_res) is 0:
             continue
         p_count += len(pre_res)
-        d_count += len(rd)
+
         for rd_ele in rd:
             max_score = 0.0
             for pd_ele in pre_res:
@@ -278,7 +279,7 @@ tree_shreshold = 0.8
 
 
 # 正则抽取 所有数据
-def extract_info_by_pattern(input_pt, input_text, out_extract_infos, max_len=1<<32):
+def extract_info_by_pattern(input_pt, input_text, out_extract_infos, max_len= 1<< 32):
     try:
         gf = re.finditer(input_pt, input_text, flags=re.S)
         for gfi in gf:
@@ -290,8 +291,9 @@ def extract_info_by_pattern(input_pt, input_text, out_extract_infos, max_len=1<<
             if (gfi.start(1), e_span) not in out_extract_infos:
                 out_extract_infos[(gfi.start(1), e_span)] = len(out_extract_infos)
     except Exception as e:
-        print(input_text, input_pt)
-        raise Exception
+        print(input_text)
+        print(input_pt)
+        raise e
 
 
 class PatternModel(object):
@@ -311,6 +313,8 @@ class PatternModel(object):
         self.word_parse_feature_v4 = []
 
         self.parse2id = dict()
+
+        self.filter_char = [")", "*", "+", "?", "(", "-", "|"]
 
     def negative_choice(self, input_text, positive_span=tuple()):
         """ 随机负采样，原理随机获得和目标词不同的区域作为负样本
@@ -362,7 +366,7 @@ class PatternModel(object):
         for i, text in enumerate(train_text):
             extract_infos = dict()
             for pt in self.pattern_list:
-                extract_info_by_pattern(text, pt, extract_infos, self.max_len)
+                extract_info_by_pattern(pt, text, extract_infos, self.max_len)
 
             extract_infos_reverse = {v: k for k, v in extract_infos.items()}
             for inx in range(len(extract_infos_reverse)):
@@ -399,9 +403,7 @@ class PatternModel(object):
     def generate_feature_v2(self, input_list):
         feature = []
         def inner_f(i_char: str):
-            if i_char.isalpha():
-                return "[a-zA-Z]"
-            elif i_char.isdigit():
+            if i_char.isdigit():
                 return "\d"
             else:
                 return i_char
@@ -590,29 +592,53 @@ class PatternModel(object):
                 else:
                     self.build_pattern_tree(sub_start, sub_end, v, start_len, end_len+1)
 
-    def check_pattern(self):
-        assert len(self.n_pattern_list) > 0
-        d = [0]*len(self.train_label)
-        for _, m_list in self.n_pattern_list:
-            for m in m_list:
-                d[m] = 1
-        logger.info("data num {0} cover num {1}".format(len(self.train_label), sum(d)))
+    def build_pattern_v1(self):
+        def generate_pattern(input_text):
+            pt_list = []
+            last = None
+            for char in input_text:
+                nchar = char
+                if re.match("[\u4e00-\u9fa5]", char):
+                    nchar = "[\u4e00-\u9fa5]"
+                elif char.isalpha():
+                    nchar = "[a-zA-Z]"
+                elif char.isdigit():
+                    nchar = "\d"
+                elif char in self.filter_char:
+                    nchar = "\\{}".format(char)
+                if nchar != last:
+                    pt_list.append(nchar+"+")
+                last = nchar
+            return "".join(pt_list)
 
-
-    def fit(self, input_feature_data, label_datas):
         pattern_statis = dict()
-        # 负样本
-        negative_span = []
-        self.train_text = input_feature_data
-        self.train_label = label_datas
-        for i, text in enumerate(input_feature_data):
-            label_data = label_datas[i]
+        for i, text in enumerate(self.train_text):
+            label_data = self.train_label[i]
             start_indx = label_data[0]
-            end_indx = label_data[0]+len(label_data[1])
+            end_indx = label_data[0] + len(self.train_label[1])
+            start_context = text[:start_indx]
+            core_data = label_data[1]
+            # self.core_list.append(core_data)
+
+            mid_p = generate_pattern(core_data)
+
+            end_context = text[end_indx:]
+
+            start_p = start_context[-1] if len(start_context) else "^"
+            end_p = end_context[0] if len(end_context) else "$"
+
+            pattern_statis.setdefault((start_p, mid_p, end_p), [])
+            pattern_statis[(start_p, mid_p, end_p)].append(i)
+
+    def build_pattern_v2(self):
+        pattern_statis = dict()
+        for i, text in enumerate(self.train_text):
+            label_data = self.train_label[i]
+            start_indx = label_data[0]
+            end_indx = label_data[0] + len(label_data[1])
             start_context = text[:start_indx]
             core_data = label_data[1]
             self.core_list.append(core_data)
-            negative_span.append(self.negative_choice(text, (start_indx, end_indx)))
             end_context = text[end_indx:]
 
             start_p = start_context[-1] if len(start_context) else "^"
@@ -632,6 +658,25 @@ class PatternModel(object):
                 self.build_pattern_tree(start_p, end_p, v, 1, 0)
             else:
                 self.build_pattern_tree(start_p, end_p, v, 1, 1)
+
+
+    def check_pattern(self):
+        assert len(self.n_pattern_list) > 0
+        d = [0]*len(self.train_label)
+        for _, m_list in self.n_pattern_list:
+            for m in m_list:
+                d[m] = 1
+        logger.info("data num {0} cover num {1}".format(len(self.train_label), sum(d)))
+
+
+    def fit(self, input_feature_data, label_datas):
+        pattern_statis = dict()
+        # 负样本
+        negative_span = []
+        self.train_text = input_feature_data
+        self.train_label = label_datas
+        self.build_pattern_v2()
+
         # 检查模式是否全部覆盖数据
         self.check_pattern()
 
@@ -644,7 +689,7 @@ class PatternModel(object):
         # if len(negative_span_value):
         #     negative_span = list(negative_span_value)
         # self.train_core_model(self.core_list, negative_span)
-        self.train_similarity_model(self.core_list)
+        self.train_similarity_model_v2(self.core_list)
 
     def calculate(self, input_str):
         score = 0.0
@@ -705,17 +750,17 @@ class PatternModel(object):
             extract_list = []
             extract_infos = dict()
             for pt in self.pattern_list:
-                extract_info_by_pattern(text, pt, extract_infos, self.max_len)
+                extract_info_by_pattern(pt, text, extract_infos, self.max_len)
 
             # extract_infos.sort(key=lambda x: x[2], reverse=True)
             extract_infos_reverse = {v: k for k, v in extract_infos.items()}
             if extract_infos:
                 extract_span_list = [e_info[1] for e_info in extract_infos]
-                extract_span_feature = self.generate_feature(extract_span_list)
+                extract_span_feature = self.generate_feature_v2(extract_span_list)
                 # extract_span_res = self.calculate_classifier_score(extract_span_list)
 
                 # extract_span_res = self.calculate_word_embed_sim(extract_span_feature)
-                extract_span_res = self.calculate_word_embed_sim(extract_span_feature)
+                extract_span_res = self.calculate_word_embed_sim_v2(extract_span_feature)
 
 
                 # inx = 0
@@ -787,6 +832,7 @@ if __name__ == "__main__":
             logger.info("event {0} start, role {1} start, train_data {2}".format(event_type, role_value, len(test_train)))
             if len(test_train) == 0:
                 continue
+            start = time.time()
             test_train_feature = [d[0] for d in test_train]
             test_for_train_label = [(d[1], d[2]) for d in test_train]
 
@@ -796,6 +842,8 @@ if __name__ == "__main__":
             pt.fit(test_train_feature, test_for_train_label)
             train_pres = pt.predict(test_train_data)
             eval_pres = pt.predict(test_eval_data)
+
+            logger.info("model predict cost {}".format(time.time()-start))
 
             # check_if_answer_in(test_train_label, train_pres)
             # logger.info("event ", event_type, " start, role ", role_value, " end")
