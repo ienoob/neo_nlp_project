@@ -32,7 +32,6 @@ class MatchInteraction(tf.keras.layers.Layer):
         self.left_match_rnn = None
 
 
-
 class MatchLSTM(tf.keras.Model):
 
     def __init__(self):
