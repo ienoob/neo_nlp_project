@@ -968,17 +968,25 @@ class LoaderBaiduDueeFin(object):
 
 class QaPair(object):
 
-    def __init__(self, input_qa_id, input_qa_type, input_qa):
+    def __init__(self, input_qa_id, input_qa_type, input_q, input_a, input_start, is_impossible=False):
         self._id = input_qa_id
         self._type = input_qa_type
-        self._qa = input_qa
+        self._q = input_q
+        self._a = input_a
+        self._start = input_start
+        self._is_impossible = is_impossible
 
 
 class QaDocument(object):
-    def __init__(self, input_title, input_context):
+    def __init__(self, input_id, input_title, input_context):
+        self._id = input_id
         self._title = input_title
         self._context = input_context
         self._qa_list = []
+
+    @property
+    def id(self):
+        return self._id
 
     @property
     def title(self):
@@ -996,6 +1004,7 @@ class QaDocument(object):
         self._qa_list.append(qa)
 
 
+
 class LoaderDuReaderChecklist(object):
 
     def __init__(self, data_path):
@@ -1004,7 +1013,33 @@ class LoaderDuReaderChecklist(object):
 
         train_data = json.load(open(self.train_path, encoding="utf-8"))
         train_data_list = train_data["data"][0]["paragraphs"]
-        print(len(train_data_list))
+
+
+        self.char2id = {"pad": 0, "unk": 1}
+        self.documents = []
+        for i, paragraph in enumerate(train_data_list):
+            context = paragraph["context"]
+            title = paragraph["title"]
+
+            doc = QaDocument(i, title, context)
+
+            for char in title:
+                if char not in self.char2id:
+                    self.char2id[char] = len(self.char2id)
+            for char in context:
+                if char not in self.char2id:
+                    self.char2id[char] = len(self.char2id)
+
+            for qa in paragraph["qa"]:
+                question = qa["question"]
+                for char in question:
+                    if char not in self.char2id:
+                        self.char2id[char] = len(self.char2id)
+                qa_item = QaPair(qa["id"], qa["type"], question,
+                                 qa["answers"][0]["text"], qa["answers"][0]["answer_start"], qa["is_impossible"])
+                doc.add_qa_item(qa_item)
+            self.documents.append(doc)
+
 
 class LoaderBaiduDialogV1(object):
 
