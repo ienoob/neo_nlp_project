@@ -417,6 +417,7 @@ class SpERt(tf.keras.models.Model):
              training=None, mask=None):
         # z这里用普通embed替代bert, 这是为了正常运行，毕竟╮(╯▽╰)╭内存太小了
         h = self.embed(text_ids)
+        h = self.bi_lstm(h)
 
         size_embeddings = self.size_embed(entity_sizes)
         entity_spans_pool = build_entity_feature(h, entity_masks, entity_nums)
