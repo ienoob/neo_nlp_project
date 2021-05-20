@@ -37,8 +37,8 @@ eval_data = load_json_line_data(eval_data_path)
 train_data = list(train_data)
 eval_data = list(eval_data)
 
-word_embed = load_word_vector(word_embed_path)
-# word_embed = {}
+# word_embed = load_word_vector(word_embed_path)
+word_embed = {}
 logger.info("word2vec is load")
 
 # for schema in schema_data:
@@ -599,8 +599,8 @@ class PatternModel(object):
             for char in input_text:
                 nchar = char
                 if re.match("[\u4e00-\u9fa5]", char):
-                    nchar = "[\u4e00-\u9fa5]"
-                elif char.isalpha():
+                    nchar = char
+                elif re.match("[a-zA-Z]", char):
                     nchar = "[a-zA-Z]"
                 elif char.isdigit():
                     nchar = "\d"
@@ -615,20 +615,29 @@ class PatternModel(object):
         for i, text in enumerate(self.train_text):
             label_data = self.train_label[i]
             start_indx = label_data[0]
-            end_indx = label_data[0] + len(self.train_label[1])
+            end_indx = label_data[0] + len(label_data[1])
             start_context = text[:start_indx]
             core_data = label_data[1]
+            self.max_len = max(len(core_data), self.max_len)
             # self.core_list.append(core_data)
 
             mid_p = generate_pattern(core_data)
+
+            if not re.match(mid_p, core_data):
+                print(mid_p, core_data)
+                raise Exception
 
             end_context = text[end_indx:]
 
             start_p = start_context[-1] if len(start_context) else "^"
             end_p = end_context[0] if len(end_context) else "$"
-
+            if start_p in self.filter_char:
+                start_p = "\\{}".format(start_p)
+            if end_p in self.filter_char:
+                end_p = "\\{}".format(end_p)
             pattern_statis.setdefault((start_p, mid_p, end_p), [])
             pattern_statis[(start_p, mid_p, end_p)].append(i)
+        self.n_pattern_list = [(r"{0}({1}){2}".format(k[0], k[1], k[2]), v) for k, v in pattern_statis.items()]
 
     def build_pattern_v2(self):
         pattern_statis = dict()
@@ -675,7 +684,7 @@ class PatternModel(object):
         negative_span = []
         self.train_text = input_feature_data
         self.train_label = label_datas
-        self.build_pattern_v2()
+        self.build_pattern_v1()
 
         # 检查模式是否全部覆盖数据
         self.check_pattern()
@@ -755,19 +764,21 @@ class PatternModel(object):
             # extract_infos.sort(key=lambda x: x[2], reverse=True)
             extract_infos_reverse = {v: k for k, v in extract_infos.items()}
             if extract_infos:
-                extract_span_list = [e_info[1] for e_info in extract_infos]
-                extract_span_feature = self.generate_feature_v2(extract_span_list)
-                # extract_span_res = self.calculate_classifier_score(extract_span_list)
+                # extract_span_list = [e_info[1] for e_info in extract_infos]
+                # extract_span_feature = self.generate_feature_v2(extract_span_list)
+                # # extract_span_res = self.calculate_classifier_score(extract_span_list)
+                #
+                # # extract_span_res = self.calculate_word_embed_sim(extract_span_feature)
+                # extract_span_res = self.calculate_word_embed_sim_v2(extract_span_feature)
 
-                # extract_span_res = self.calculate_word_embed_sim(extract_span_feature)
-                extract_span_res = self.calculate_word_embed_sim_v2(extract_span_feature)
 
-
-                # inx = 0
+                inx = 0
+                extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
+                extract_list.append(extract)
                 # print("max {0} score is {1} ".format(extract_infos_reverse[inx][1], match_score))
-                for inx, e_score in extract_span_res:
-                    extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
-                    extract_list.append(extract)
+                # for inx, e_score in extract_span_res:
+                #     extract = (extract_infos_reverse[inx][0], extract_infos_reverse[inx][1])
+                #     extract_list.append(extract)
 
             predict_res.append(extract_list)
 
@@ -841,57 +852,59 @@ if __name__ == "__main__":
             pt = PatternModel()
             pt.fit(test_train_feature, test_for_train_label)
             train_pres = pt.predict(test_train_data)
+
             eval_pres = pt.predict(test_eval_data)
 
             logger.info("model predict cost {}".format(time.time()-start))
-
-            # check_if_answer_in(test_train_label, train_pres)
             # logger.info("event ", event_type, " start, role ", role_value, " end")
-
+            #
             train_hard_eval = hard_score_res_v2(test_train_label, train_pres)
             print(train_hard_eval)
-            train_soft_eval = soft_score_res_v2(test_train_label, train_pres)
 
-            eval_hard_eval = hard_score_res_v2(test_eval_label, eval_pres)
-            print(eval_hard_eval)
-            eval_soft_eval = soft_score_res_v2(test_eval_label, eval_pres)
+            break
+        break
+            # train_soft_eval = soft_score_res_v2(test_train_label, train_pres)
+            #
+            # eval_hard_eval = hard_score_res_v2(test_eval_label, eval_pres)
+            # print(eval_hard_eval)
+            # eval_soft_eval = soft_score_res_v2(test_eval_label, eval_pres)
+            #
+            # calculate_result(train_eval_dict, train_hard_eval, train_soft_eval)
+            # calculate_result(eval_eval_dict, eval_hard_eval, eval_soft_eval)
+            #
+            # train_eval_info.append({"hard": train_hard_eval, "sorf": train_soft_eval})
+            # dev_eval_info.append({"hard": eval_hard_eval, "sorf": eval_soft_eval})
 
-            calculate_result(train_eval_dict, train_hard_eval, train_soft_eval)
-            calculate_result(eval_eval_dict, eval_hard_eval, eval_soft_eval)
 
-            train_eval_info.append({"hard": train_hard_eval, "sorf": train_soft_eval})
-            dev_eval_info.append({"hard": eval_hard_eval, "sorf": eval_soft_eval})
-
-
-    train_hard_p_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_pre_count"]
-    train_hard_r_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_real_count"]
-    train_hard_f1_value = 2*train_hard_p_value*train_hard_r_value/(train_hard_p_value+train_hard_r_value)
-
-    logger.info("train hard precision: {0} recall: {1} f1_value: {2}".format(train_hard_p_value, train_hard_r_value, train_hard_f1_value))
-
-    train_soft_p_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_pre_count"]
-    train_soft_r_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_real_count"]
-    train_soft_f1_value = 2*train_soft_p_value*train_soft_r_value/(train_soft_p_value+train_soft_r_value)
-
-    logger.info("train soft precision: {0} recall: {1} f1_value: {2}".format(train_soft_p_value, train_soft_r_value, train_soft_f1_value))
-
-    soft_hard_p_value = eval_eval_dict["hard_hit_count"]/eval_eval_dict["hard_pre_count"]
-    soft_hard_r_value = eval_eval_dict["hard_hit_count"]/eval_eval_dict["hard_real_count"]
-    soft_hard_f1_value = 2*soft_hard_p_value*soft_hard_r_value/(soft_hard_p_value+soft_hard_r_value)
-
-    logger.info("eval hard precision: {0} recall: {1} f1_value: {2}".format(soft_hard_p_value, soft_hard_r_value, soft_hard_f1_value))
-
-    soft_soft_p_value = eval_eval_dict["soft_hit_count"]/eval_eval_dict["soft_pre_count"]
-    soft_soft_r_value = eval_eval_dict["soft_hit_count"]/eval_eval_dict["soft_real_count"]
-    soft_soft_f1_value = 2*soft_soft_p_value*soft_soft_r_value/(soft_soft_p_value+soft_soft_r_value)
-
-    logger.info("eval soft precision: {0} recall: {1} f1_value: {2}".format(soft_soft_p_value, soft_soft_r_value, soft_soft_f1_value))
-
-    with open("D:\\tmp\\result_save\\{}".format("train_eval_{}.json".format(int(time.time()))), "w") as f:
-        f.write("\n".join([json.dumps(sub_info) for sub_info in train_eval_info]))
-
-    with open("D:\\tmp\\result_save\\{}".format("dev_eval_{}.json".format(int(time.time()))), "w") as f:
-        f.write("\n".join([json.dumps(sub_info) for sub_info in dev_eval_info]))
+    # train_hard_p_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_pre_count"]
+    # train_hard_r_value = train_eval_dict["hard_hit_count"]/train_eval_dict["hard_real_count"]
+    # train_hard_f1_value = 2*train_hard_p_value*train_hard_r_value/(train_hard_p_value+train_hard_r_value)
+    #
+    # logger.info("train hard precision: {0} recall: {1} f1_value: {2}".format(train_hard_p_value, train_hard_r_value, train_hard_f1_value))
+    #
+    # train_soft_p_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_pre_count"]
+    # train_soft_r_value = train_eval_dict["soft_hit_count"]/train_eval_dict["soft_real_count"]
+    # train_soft_f1_value = 2*train_soft_p_value*train_soft_r_value/(train_soft_p_value+train_soft_r_value)
+    #
+    # logger.info("train soft precision: {0} recall: {1} f1_value: {2}".format(train_soft_p_value, train_soft_r_value, train_soft_f1_value))
+    #
+    # soft_hard_p_value = eval_eval_dict["hard_hit_count"]/eval_eval_dict["hard_pre_count"]
+    # soft_hard_r_value = eval_eval_dict["hard_hit_count"]/eval_eval_dict["hard_real_count"]
+    # soft_hard_f1_value = 2*soft_hard_p_value*soft_hard_r_value/(soft_hard_p_value+soft_hard_r_value)
+    #
+    # logger.info("eval hard precision: {0} recall: {1} f1_value: {2}".format(soft_hard_p_value, soft_hard_r_value, soft_hard_f1_value))
+    #
+    # soft_soft_p_value = eval_eval_dict["soft_hit_count"]/eval_eval_dict["soft_pre_count"]
+    # soft_soft_r_value = eval_eval_dict["soft_hit_count"]/eval_eval_dict["soft_real_count"]
+    # soft_soft_f1_value = 2*soft_soft_p_value*soft_soft_r_value/(soft_soft_p_value+soft_soft_r_value)
+    #
+    # logger.info("eval soft precision: {0} recall: {1} f1_value: {2}".format(soft_soft_p_value, soft_soft_r_value, soft_soft_f1_value))
+    #
+    # with open("D:\\tmp\\result_save\\{}".format("train_eval_{}.json".format(int(time.time()))), "w") as f:
+    #     f.write("\n".join([json.dumps(sub_info) for sub_info in train_eval_info]))
+    #
+    # with open("D:\\tmp\\result_save\\{}".format("dev_eval_{}.json".format(int(time.time()))), "w") as f:
+    #     f.write("\n".join([json.dumps(sub_info) for sub_info in dev_eval_info]))
 
 
 # p_value = hit_count/pred_count

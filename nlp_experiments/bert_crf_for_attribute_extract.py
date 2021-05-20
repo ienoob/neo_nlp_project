@@ -25,6 +25,8 @@ train_data = load_json_line_data(data_path)
 eval_data = load_json_line_data(eval_data_path)
 
 train_data = list(train_data)
+eval_data = list(eval_data)
+
 
 class BertCrfModel(tf.keras.Model):
 
@@ -52,7 +54,6 @@ class BertCrfModel(tf.keras.Model):
             return out_tags, text_lens, log_likelihood
         else:
             return out_tags, text_lens
-
 
 
 
@@ -185,13 +186,15 @@ for schema in schema_data:
         test_eval, test_eval_data, test_eval_label = sample_data(event_type, role_value, eval_data)
 
         logger.info("event {0} start, role {1} start, train_data {2}".format(event_type, role_value, len(test_train)))
+        if len(test_train) == 0:
+            continue
 
         test_train_dataset, (train_data_t, label_data_t, mask_data_t) = generate(test_train_data, test_train_label)
 
         att_model = ATTBertModel(bert_model_name, 4)
         att_model.fit(train_data_t, label_data_t, mask_data_t)
 
-        _, (train_data, label_data, mask_data) = generate(test_eval_data, test_eval_label)
+        # _, (train_data_v, label_data_v, mask_data_v) = generate(test_eval_data, test_eval_label)
         logits, text_lens = att_model.predict(train_data_t, mask_data_t)
         print(label_data_t)
         paths = []
@@ -199,12 +202,14 @@ for schema in schema_data:
             viterbi_path, _ = viterbi_decode(logit[:text_len], att_model.transition_params)
             paths.append(viterbi_path)
         id2label = {
-            0: "pad",
+            0: "O",
             1: "B-E",
             2: "I-E",
             3: "O"}
         paths2label = [[id2label[p] for p in path] for path in paths]
-        extract_info = [[(ee[0], ee[1]-ee[0]) for ee in extract_entity(path)] for path in paths2label]
+        extract_info = [[(ee[0], test_train_data[i][ee[0]:ee[1]]) for ee in extract_entity(path)] for i, path in enumerate(paths2label)]
+        # extract_info1 = [[(ee[0], test_train_data[i][ee[0]:ee[1]]) for ee in extract_entity(path)] for i, path in
+        #                 enumerate(paths2label)]
         print(extract_info)
 
         print(hard_score_res_v2(test_train_label, extract_info))

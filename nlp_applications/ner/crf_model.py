@@ -51,18 +51,7 @@ def sent2labels(sent):
 
 # msra_data = LoadMsraDataV1("D:\data\\nlp\命名实体识别\data\msra")
 
-msra_data = LoadMsraDataV2("D:\data\\nlp\\命名实体识别\\msra_ner_token_level\\")
 
-print(msra_data.train_tag_list[0])
-
-X_train = [sent2features(s) for s in msra_data.train_sentence_list]
-y_train = [sent2labels(s) for s in msra_data.train_tag_list]
-
-X_test = [sent2features(s) for s in msra_data.test_sentence_list]
-y_test = [sent2labels(s) for s in msra_data.test_tag_list]
-
-# print(X_train)
-print(len(y_train))
 
 
 class CRFNerModel(object):
@@ -101,7 +90,6 @@ class CRFNerModel(object):
     def extract_ner(self, input_x):
         extract_ner = []
         res = self.predict(input_x)
-        print(res)
 
         start = None
         label = None
@@ -124,14 +112,27 @@ class CRFNerModel(object):
                         label = None
         return extract_ner
 
+if __name__ == "__main__":
+    msra_data = LoadMsraDataV2("D:\data\\nlp\\命名实体识别\\msra_ner_token_level\\")
 
-crf_mode = CRFNerModel()
-crf_mode.load_model()
-# crf_mode.fit(X_train, y_train)
+    print(msra_data.train_tag_list[0])
 
-predict_labels = crf_mode.predict_list(X_test)
-true_labels = y_test
+    X_train = [sent2features(s) for s in msra_data.train_sentence_list]
+    y_train = [sent2labels(s) for s in msra_data.train_tag_list]
 
-print(metrix(true_labels, predict_labels))
+    X_test = [sent2features(s) for s in msra_data.test_sentence_list]
+    y_test = [sent2labels(s) for s in msra_data.test_tag_list]
 
-print(crf_mode.extract_ner("1月18日，在印度东北部一座村庄，一头小象和家人走过伐木工人正在清理的区域时被一根圆木难住了。"))
+    # print(X_train)
+    print(len(y_train))
+
+    crf_mode = CRFNerModel()
+    crf_mode.load_model()
+    # crf_mode.fit(X_train, y_train)
+
+    predict_labels = crf_mode.predict_list(X_test)
+    true_labels = y_test
+
+    print(metrix(true_labels, predict_labels))
+
+    print(crf_mode.extract_ner("1月18日，在印度东北部一座村庄，一头小象和家人走过伐木工人正在清理的区域时被一根圆木难住了。"))

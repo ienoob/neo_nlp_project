@@ -65,6 +65,40 @@ def metrix(true_labels, predict_labels):
 
     return recall, precision
 
+def metrix_v2(true_labels, predict_labels):
+    true_res = 0
+    pred_res = 0
+    predict_true = 0
+
+    assert len(true_labels) == len(predict_labels)
+    for i, label in enumerate(true_labels):
+        pred_label = predict_labels[i]
+
+        assert len(label) == len(pred_label)
+
+        true_entity = extract_entity(label)
+        pred_entity = extract_entity(pred_label)
+
+        true_res += len(true_entity)
+        pred_res += len(pred_entity)
+
+        d_true = {(s, e): lb for s, e, lb in true_entity}
+        d_pred = {(s, e): lb for s, e, lb in pred_entity}
+
+        for k, v in d_true.items():
+            if k in d_pred and d_pred[k] == v:
+                predict_true += 1
+
+    matrix = {
+        "score": predict_true,
+        "p_count": pred_res,
+        "d_count": true_res,
+        "recall": (predict_true + 1e-8) / (true_res + 1e-3),
+        "precision": (predict_true + 1e-8) / (pred_res + 1e-3)
+    }
+    matrix["f1_value"] = 2 * matrix["recall"] * matrix["precision"] / (matrix["recall"] + matrix["precision"])
+    return matrix
+
 
 # 严格结果， 要求完成重合
 def hard_score_res_v2(real_data, predict_data):
