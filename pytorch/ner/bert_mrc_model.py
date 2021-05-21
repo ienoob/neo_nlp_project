@@ -178,5 +178,3 @@ if __name__ == "__main__":
         print(start_loss, end_loss, match_loss)
 
         optimizer.step()
-
-        break
