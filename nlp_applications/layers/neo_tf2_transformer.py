@@ -10,12 +10,8 @@
 import numpy as np
 import tensorflow as tf
 
-vocab_size = 10
-embed_size = 64
-data_maxlen = 128
-class_num = 10
 
-def position_embed(input_batch):
+def position_embed(input_batch, data_maxlen, embed_size):
 
     positon_embed_out = np.zeros((data_maxlen, embed_size))
 
@@ -45,18 +41,18 @@ sample_k = tf.constant([1]*24, shape=[2, 2, 3, 2])
 sample_q = tf.constant([2]*24, shape=[2, 2, 3, 2])
 sample_v = tf.constant([3]*24, shape=[2, 2, 3, 2])
 
-print(self_attention(sample_q, sample_k, sample_v, 2))
+# print(self_attention(sample_q, sample_k, sample_v, 2))
 
 
 class MultiHeader(tf.keras.layers.Layer):
 
-    def __init__(self, head_num=8, input_length=128):
+    def __init__(self, embed_size, head_num=8, input_length=128):
         super(MultiHeader, self).__init__()
 
         self.sub_len = int(embed_size//head_num)
-        self.embed = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embed_size)
         self.input_length = input_length
         self.head_num = head_num
+        self.embed_size = embed_size
         self.q = tf.keras.layers.Dense(embed_size)
         self.k = tf.keras.layers.Dense(embed_size)
         self.v = tf.keras.layers.Dense(embed_size)
@@ -79,23 +75,23 @@ class MultiHeader(tf.keras.layers.Layer):
         v = tf.transpose(v, perm=[0, 2, 1, 3])
 
         attention_value = self_attention(q, k, v, self.sub_len)
-        attention_value_rs = tf.reshape(attention_value, (batch, -1, embed_size))
+        attention_value_rs = tf.reshape(attention_value, (batch, -1, self.embed_size))
 
         return attention_value_rs
 
 
 class TransformerEncoder(tf.keras.layers.Layer):
 
-    def __init__(self, seq_num, header_num=8):
+    def __init__(self, embed_size, seq_num, header_num=8):
         super(TransformerEncoder, self).__init__()
 
-        self.self_attention_layer = MultiHeader(head_num=header_num, input_length=seq_num)
+        self.self_attention_layer = MultiHeader(embed_size, head_num=header_num, input_length=seq_num)
         self.normal_layer1 = tf.keras.layers.LayerNormalization()
         self.feedward = tf.keras.layers.Dense(embed_size)
         self.normal_layer2 = tf.keras.layers.LayerNormalization()
 
     def call(self, inputs, **kwargs):
-        inputs_attention = self.self_attention_layer(inputs)
+        inputs_attention = self.self_attention_layer(inputs, inputs, inputs)
         inputs_value = inputs+inputs_attention
         inputs_value = self.normal_layer1(inputs_value)
         inputs_value_feed = self.feedward(inputs_value)
@@ -103,3 +99,28 @@ class TransformerEncoder(tf.keras.layers.Layer):
         inputs_value = self.normal_layer2(inputs_value)
 
         return inputs_value
+
+
+class Decoder(tf.keras.layers.Layer):
+
+    def __init__(self, vocab_size, embed_size, seq_num, header_num=8):
+        super(Decoder, self).__init__()
+        self.mask_attention_layer = MultiHeader(embed_size, head_num=header_num, input_length=seq_num)
+        self.normal_layer1 = tf.keras.layers.LayerNormalization()
+        self.encoder_attention_layer = MultiHeader(embed_size, head_num=header_num, input_length=seq_num)
+        self.normal_layer2 = tf.keras.layers.LayerNormalization()
+        self.feedward = tf.keras.layers.Dense(embed_size)
+        self.normal_layer3 = tf.keras.layers.LayerNormalization()
+
+    def call(self, inputs, **kwargs):
+        input_mask_attention = self.mask_attention_layer(inputs)
+        input_value = inputs+input_mask_attention
+        input_value = self.normal_layer1(input_value)
+        input_value_att = self.encoder_attention_layer(input_value)
+        input_value = input_value + input_value_att
+        input_value = self.normal_layer2(input_value)
+        input_value_feed = self.feedward(input_value)
+        input_value = input_value + input_value_feed
+        input_value = self.normal_layer3(input_value)
+
+        return input_value
