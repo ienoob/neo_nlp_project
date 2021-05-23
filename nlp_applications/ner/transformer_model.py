@@ -7,153 +7,127 @@
     @File    : transformer_model.py
 
 """
-import numpy as np
+
 import tensorflow as tf
+from nlp_applications.data_loader import LoadMsraDataV2
+from nlp_applications.ner.evaluation import metrix
+from nlp_applications.layers.neo_tf2_transformer import TransformerEncoder
 
+msra_data = LoadMsraDataV2("D:\data\\nlp\\命名实体识别\\msra_ner_token_level\\")
 
-vocab_size = 10
+char2id = {"pad": 0, "unk": 1}
+max_len = -1
+msra_train_id = []
+msra_pos_id = []
+for sentence in msra_data.train_sentence_list:
+    sentence_id = []
+    for s in sentence:
+        if s not in char2id:
+            char2id[s] = len(char2id)
+        sentence_id.append(char2id[s])
+    if len(sentence_id) > max_len:
+        max_len = len(sentence_id)
+    msra_train_id.append(sentence_id)
+    msra_pos_id.append([i+1 for i in range(len(sentence_id))])
+
+tag_list = msra_data.train_tag_list
+label2id = {"O": 0}
+for lb in msra_data.labels:
+    if lb not in label2id:
+        label2id[lb] = len(label2id)
+id2label = {v:k for k, v in label2id.items()}
+msra_tag_id = []
+for tag in tag_list:
+    tag_ids = []
+    for tg in tag:
+        tag_ids.append(label2id[tg])
+    msra_tag_id.append(tag_ids)
+
+vocab_size = len(char2id)+1
 embed_size = 64
-data_maxlen = 128
-class_num = 10
+class_num = len(label2id)
 
-def position_embed(input_batch):
+train_data = tf.keras.preprocessing.sequence.pad_sequences(msra_train_id, padding="post", maxlen=max_len)
+label_data = tf.keras.preprocessing.sequence.pad_sequences(msra_tag_id, padding="post", maxlen=max_len)
+pos_data = tf.keras.preprocessing.sequence.pad_sequences(msra_pos_id, padding="post", maxlen=max_len)
+dataset = tf.data.Dataset.from_tensor_slices((train_data, pos_data, label_data)).shuffle(100).batch(100)
 
-    positon_embed_out = np.zeros((data_maxlen, embed_size))
-
-    for i in range(data_maxlen):
-        for j in range(embed_size):
-            if j % 2:
-                positon_embed_out[i][j] = np.cos(i/np.power(10000, j/embed_size))
-            else:
-                positon_embed_out[i][j] = np.sin(i / np.power(10000, j / embed_size))
-    positon_embed_out = positon_embed_out[np.newaxis, :]
-    positon_embed_out = np.repeat(positon_embed_out, input_batch, axis=0)
-    return positon_embed_out
+# vocab_size = 10
+# embed_size = 64
+# data_maxlen = 4
+# class_num = 10
 
 
-def self_attention(q, k, v, dim_k):
+class TransformersModel(tf.keras.models.Model):
 
-    k = tf.transpose(k, [0, 1, 3, 2])
-    qk = tf.matmul(q, k)
-    qk = tf.cast(qk, tf.float32)
-    qk = tf.divide(qk, np.sqrt(dim_k))
-    qk = tf.nn.softmax(qk)
-    v = tf.cast(v, tf.float32)
-    return tf.matmul(qk, v)
-
-
-sample_k = tf.constant([1]*24, shape=[2, 2, 3, 2])
-sample_q = tf.constant([2]*24, shape=[2, 2, 3, 2])
-sample_v = tf.constant([3]*24, shape=[2, 2, 3, 2])
-
-print(self_attention(sample_q, sample_k, sample_v, 2))
-
-
-class MultiHeader(tf.keras.layers.Layer):
-
-    def __init__(self, head_num=8, input_length=128):
-        super(MultiHeader, self).__init__()
-
-        self.sub_len = int(embed_size//head_num)
-        self.embed = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embed_size)
-        self.input_length = input_length
-        self.head_num = head_num
-        self.q = tf.keras.layers.Dense(embed_size)
-        self.k = tf.keras.layers.Dense(embed_size)
-        self.v = tf.keras.layers.Dense(embed_size)
-
-        self.feed_forward = tf.keras.layers.Dense(embed_size)
-
-
-
-    def call(self, input_s, **kwargs):
-
-        batch = input_s.shape[0]
-        q = self.q(input_s)
-        k = self.k(input_s)
-        v = self.v(input_s)
-
-        q = tf.reshape(q, (batch, -1, self.head_num, self.sub_len))
-        k = tf.reshape(k, (batch, -1, self.head_num, self.sub_len))
-        v = tf.reshape(v, (batch, -1, self.head_num, self.sub_len))
-
-        q = tf.transpose(q, perm=[0, 2, 1, 3])
-        k = tf.transpose(k, perm=[0, 2, 1, 3])
-        v = tf.transpose(v, perm=[0, 2, 1, 3])
-
-        attention_value = self_attention(q, k, v, self.sub_len)
-        attention_value_rs = tf.reshape(attention_value, (batch, -1, embed_size))
-
-        return attention_value_rs
-
-
-
-
-# mmh = MultiHeader(2, 4)
-#
-# sample_input = tf.constant([[1, 2, 3, 4]])
-# mmh(sample_input)
-
-
-class Encoder(tf.keras.layers.Layer):
-
-    def __init__(self, seq_num, header_num=8):
-        super(Encoder, self).__init__()
-
-        self.self_attention_layer = MultiHeader(head_num=header_num, input_length=seq_num)
-        self.normal_layer1 = tf.keras.layers.LayerNormalization()
-        self.feedward = tf.keras.layers.Dense(embed_size)
-        self.normal_layer2 = tf.keras.layers.LayerNormalization()
-
-    def call(self, inputs, **kwargs):
-        inputs_attention = self.self_attention_layer(inputs)
-        inputs_value = inputs+inputs_attention
-        inputs_value = self.normal_layer1(inputs_value)
-        inputs_value_feed = self.feedward(inputs_value)
-        inputs_value = inputs_value+inputs_value_feed
-        inputs_value = self.normal_layer2(inputs_value)
-
-        return inputs_value
-
-
-class Decoder(tf.keras.layers.Layer):
-
-    def __init__(self, seq_num, header_num=8):
-        super(Decoder, self).__init__()
-        self.mask_attention_layer = MultiHeader(head_num=header_num, input_length=seq_num)
-        self.normal_layer1 = tf.keras.layers.LayerNormalization()
-        self.encoder_attention_layer = MultiHeader(head_num=header_num, input_length=seq_num)
-        self.normal_layer2 = tf.keras.layers.LayerNormalization()
-        self.feedward = tf.keras.layers.Dense(embed_size)
-        self.normal_layer3 = tf.keras.layers.LayerNormalization()
-
-    def call(self, inputs, **kwargs):
-        input_mask_attention = self.mask_attention_layer(inputs)
-        input_value = inputs+input_mask_attention
-        input_value = self.normal_layer1(input_value)
-        input_value_att = self.encoder_attention_layer(input_value)
-        input_value = input_value + input_value_att
-        input_value = self.normal_layer2(input_value)
-        input_value_feed = self.feedward(input_value)
-        input_value = input_value + input_value_feed
-        input_value = self.normal_layer3(input_value)
-
-        return input_value
-
-
-
-class Transformers(tf.keras.models.Model):
-
-    def __init__(self, encoder_num, decoder_num, seq_num, header_num=8):
-        super(Transformers, self).__init__()
+    def __init__(self, encoder_num, seq_num, header_num=8):
+        super(TransformersModel, self).__init__()
 
         self.embed = tf.keras.layers.Embedding(vocab_size, embed_size)
-        self.output_embed = tf.keras.layers.Embedding(vocab_size, embed_size)
-        self.encoders = [Encoder(seq_num, header_num) for _ in range(encoder_num)]
-        self.decoders = [Decoder(seq_num, header_num) for _ in range(encoder_num)]
+        self.position_embed = tf.keras.layers.Embedding(vocab_size, embed_size)
+        self.transformer_encoder_list = [TransformerEncoder(embed_size, seq_num, header_num) for _ in range(encoder_num)]
 
         self.linear = tf.keras.layers.Dense(class_num, activation="softmax")
 
-    def call(self, inputs):
-        pass
+    def call(self, inputs, position_inputs, training=None, mask=None):
+        embed = self.embed(inputs)
+        posi_embed = self.position_embed(position_inputs)
 
+        embed_value = embed + posi_embed
+        for encoder in self.transformer_encoder_list:
+            embed_value = encoder(embed_value)
+
+        ner_logits = self.linear(embed_value)
+
+        return ner_logits
+
+
+
+
+def run_test_model():
+    model = TransformersModel(2, 4, 2)
+    sample_input = tf.constant([[1, 3, 3, 2]])
+    sample_position = tf.constant([[1, 2, 3, 4]])
+
+    print(model(sample_input, sample_position))
+
+
+# run_test_model()
+
+model = TransformersModel(2, max_len, 2)
+optimizer = tf.keras.optimizers.Adam()
+
+
+def loss_func(input_y, logits):
+    cross_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+    mask = tf.math.logical_not(tf.math.equal(input_y, 0))
+
+    mask = tf.cast(mask, dtype=tf.int64)
+    lossv = cross_func(input_y, logits, sample_weight=mask)
+
+    return lossv
+
+
+@tf.function()
+def train_step(input_xx, input_position, input_yy):
+
+    with tf.GradientTape() as tape:
+        logits = model(input_xx, input_position)
+        loss_v = loss_func(input_yy, logits)
+
+    variables = model.variables
+    gradients = tape.gradient(loss_v, variables)
+    optimizer.apply_gradients(zip(gradients, variables))
+
+    return loss_v
+
+
+epoch = 5
+for ep in range(epoch):
+
+    for batch, (trainv, posv, labelv) in enumerate(dataset.take(-1)):
+        loss = train_step(trainv, posv, labelv)
+
+        if batch % 10 == 0:
+            print("epoch {0} batch {1} loss is {2}".format(ep, batch, loss))
+    break

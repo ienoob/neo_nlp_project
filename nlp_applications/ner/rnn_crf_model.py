@@ -89,8 +89,9 @@ class LSTMCRF(tf.keras.Model):
 
     def call(self, input_text, labels=None,  training=None):
         text_lens = tf.math.reduce_sum(tf.cast(tf.math.not_equal(input_text, 0), dtype=tf.int32), axis=-1)
+        mask = tf.math.logical_not(tf.math.equal(input_text, 0))
         inputs = self.embedding(input_text)
-        inputs = self.bi_lstm(inputs)
+        inputs = self.bi_lstm(inputs, mask=mask)
         inputs = self.dropout(inputs, training)
         logits = self.dense(inputs)
 
@@ -112,14 +113,14 @@ input_y_sample = tf.constant([[1, 2]])
 optimizer = tf.keras.optimizers.Adam()
 
 
-# def loss_func(input_y, logits):
-#     cross_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-#     mask = tf.math.logical_not(tf.math.equal(input_y, 0))
-#
-#     mask = tf.cast(mask, dtype=tf.int64)
-#     lossv = cross_func(input_y, logits, sample_weight=mask)
-#
-#     return lossv
+def loss_func(input_y, logits):
+    cross_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+    mask = tf.math.logical_not(tf.math.equal(input_y, 0))
+
+    mask = tf.cast(mask, dtype=tf.int64)
+    lossv = cross_func(input_y, logits, sample_weight=mask)
+
+    return lossv
 
 
 # print(loss_func(input_x_sample, output_y))
@@ -131,6 +132,7 @@ def train_step(input_xx, input_yy):
     with tf.GradientTape() as tape:
         logits, text_len, log_likelihood = model(input_xx, input_yy, True)
         loss_v = -tf.reduce_mean(log_likelihood)
+        loss_v += loss_func(input_yy, logits)
 
     variables = model.variables
     gradients = tape.gradient(loss_v, variables)
@@ -156,22 +158,22 @@ def get_acc_one_step(logits, text_lens, labels_batch):
     return accuracy
 
 output_dir = "D:\\tmp\\neo_nlp\\rnn_crf"
-# ckpt = tf.train.Checkpoint(optimizer=optimizer, model=model)
-# ckpt.restore(tf.train.latest_checkpoint(output_dir))
-# ckpt_manager = tf.train.CheckpointManager(ckpt,
-#                                           output_dir,
-#                                           checkpoint_name='model.ckpt',
-#                                           max_to_keep=3)
-# epoch = 5
-# for ep in range(epoch):
-#
-#     for batch, (trainv, labelv) in enumerate(dataset.take(-1)):
-#         loss, logits, text_lens = train_step(trainv, labelv)
-#
-#         if batch % 10 == 0:
-#             accuracy = get_acc_one_step(logits, text_lens, labelv)
-#             print("epoch {0} batch {1} loss is {2} accuracy is {3}".format(ep, batch, loss, accuracy))
-#             ckpt_manager.save()
+ckpt = tf.train.Checkpoint(optimizer=optimizer, model=model)
+ckpt.restore(tf.train.latest_checkpoint(output_dir))
+ckpt_manager = tf.train.CheckpointManager(ckpt,
+                                          output_dir,
+                                          checkpoint_name='model.ckpt',
+                                          max_to_keep=3)
+epoch = 5
+for ep in range(epoch):
+
+    for batch, (trainv, labelv) in enumerate(dataset.take(-1)):
+        loss, logits, text_lens = train_step(trainv, labelv)
+
+        if batch % 10 == 0:
+            accuracy = get_acc_one_step(logits, text_lens, labelv)
+            print("epoch {0} batch {1} loss is {2} accuracy is {3}".format(ep, batch, loss, accuracy))
+            ckpt_manager.save()
 
 
 

@@ -16,10 +16,11 @@ class NEOCRF(tf.keras.layers.Layer):
         self.num_tags = num_tags
         self.batch_first = batch_first
         self.start_transitions = tf.Variable(tf.zeros(num_tags))
-        self.end_trainsitions = tf.Variable(tf.zeros(num_tags))
+        self.end_transitions = tf.Variable(tf.zeros(num_tags))
         self.transitions = tf.Variable(tf.zeros(num_tags, num_tags))
 
         self.reset_parameters()
+
     def reset_parameters(self):
         pass
 
@@ -262,3 +263,5 @@ class NEOCRF(tf.keras.layers.Layer):
 
         return best_tags_list
 
+class NeoCRFV2(tf.keras.layers.Layer):
+    pass
