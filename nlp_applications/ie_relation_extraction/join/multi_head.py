@@ -17,14 +17,17 @@ import jieba
 import numpy as np
 import tensorflow as tf
 from nlp_applications.data_loader import LoaderDuie2Dataset, Document, BaseDataIterator
+from nlp_applications.ner.evaluation import extract_entity
 
 data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取\\"
 data_loader = LoaderDuie2Dataset(data_path)
 entity_bio_encoder = {"O": 0}
 
+
 for i in range(1, len(data_loader.entity2id)):
     entity_bio_encoder["B-{}".format(i)] = len(entity_bio_encoder)
     entity_bio_encoder["I-{}".format(i)] = len(entity_bio_encoder)
+entity_bio_id2encoder = {v:k for k, v in entity_bio_encoder.items()}
 
 batch_num = 5
 char_size = len(data_loader.char2id)
@@ -54,6 +57,7 @@ class DataIter(BaseDataIterator):
         entity_label_data = np.zeros(len(text_raw))
         rel_label_data = np.zeros((len(text_raw), len(text_raw)))
 
+        entity_relation_value = []
         for relation in doc.relation_list:
             sub = relation.sub
             obj = relation.obj
@@ -71,12 +75,14 @@ class DataIter(BaseDataIterator):
                 entity_label_data[iv] = entity_bio_encoder[e_label]
 
             rel_label_data[sub.end-1][obj.end-1] = relation.id
+            entity_relation_value.append((sub.id, sub.start, sub.end-1, obj.id, obj.start, obj.end-1, relation.id))
 
         return {
             "char_encode_id": char_encode_id,
             "word_encode_id": word_encode_id,
             "entity_label_data": entity_label_data,
-            "rel_label_data": rel_label_data
+            "rel_label_data": rel_label_data,
+            "entity_relation_value": entity_relation_value
         }
 
     def padding_batch_data(self, input_batch_data):
@@ -84,12 +90,14 @@ class DataIter(BaseDataIterator):
         batch_word_encode_id = []
         batch_entity_label = []
         batch_rel_label = []
+        batch_entity_relation_value = []
 
         max_len = 0
         for data in input_batch_data:
             batch_char_encode_id.append(data["char_encode_id"])
             batch_word_encode_id.append(data["word_encode_id"])
             batch_entity_label.append(data["entity_label_data"])
+            batch_entity_relation_value.append(data["entity_relation_value"])
 
             max_len = max(len(data["char_encode_id"]), max_len)
 
@@ -107,7 +115,8 @@ class DataIter(BaseDataIterator):
             "word_encode_id": batch_word_encode_id,
             "entity_label_data": batch_entity_label,
             "rel_label_data": tf.cast(batch_rel_label, dtype=tf.int32),
-            "max_len": tf.cast(max_len, dtype=tf.int32)
+            "max_len": tf.cast(max_len, dtype=tf.int32),
+            "entity_relation_value": batch_entity_relation_value
         }
 
 
@@ -134,7 +143,7 @@ class MultiHeaderModel(tf.keras.Model):
         self.rel_classifier = tf.keras.layers.Dense(rel_num, activation="softmax")
 
 
-    def call(self, char_ids, word_ids, entity_ids, data_max_len, training=None, mask=None):
+    def call(self, char_ids, word_ids, entity_ids=None, data_max_len=None, training=None, mask=None):
         mask_value = tf.not_equal(char_ids, 0)
         char_embed = self.char_embed(char_ids)
         word_embed = self.word_embed(word_ids)
@@ -143,8 +152,11 @@ class MultiHeaderModel(tf.keras.Model):
         sent_encoder = self.bi_lstm(embed, mask=mask_value)
         # eimission = self.emission(sent_encoder)
         entity_logits = self.entity_classifier(sent_encoder)
-
-        ent_encoder = self.ent_embed(entity_ids)
+        if training:
+            ent_encoder = self.ent_embed(entity_ids)
+        else:
+            entity_ids = tf.argmax(entity_logits, axis=-1)
+            ent_encoder = self.ent_embed(entity_ids)
 
         rel_encoder = tf.concat((sent_encoder, ent_encoder), axis=-1)
         B, L, H = rel_encoder.shape
@@ -185,7 +197,7 @@ optimizer = tf.keras.optimizers.Adam()
 def train_step(input_char_id, input_word_id, input_entity_id, input_rel_id, data_max_len):
 
     with tf.GradientTape() as tape:
-        o_entity_logits, o_rel_logits = model(input_char_id, input_word_id, input_entity_id, data_max_len)
+        o_entity_logits, o_rel_logits = model(input_char_id, input_word_id, input_entity_id, data_max_len, training=True)
         loss_v = loss_func(input_entity_id, o_entity_logits) + loss_func(input_rel_id, o_rel_logits)
 
         variables = model.variables
@@ -193,6 +205,54 @@ def train_step(input_char_id, input_word_id, input_entity_id, input_rel_id, data
         optimizer.apply_gradients(zip(gradients, variables))
 
     return loss_v
+
+
+def evaluation(input_char_id, input_word_id, input_entity_relation_value):
+    o_entity_logits, o_rel_logits = model(input_char_id, input_word_id)
+    o_entity_id = tf.argmax(o_entity_logits, axis=-1)
+
+    o_rel_ids = tf.argmax(o_rel_logits, axis=-1)
+    i_batch_num = o_entity_logits.shape[0]
+    hit_num = 0.0
+    real_count = 0.0
+    predict_count = 0.0
+    for ib in range(i_batch_num):
+        entity_id = [entity_bio_id2encoder[e] for e in o_entity_id[ib].numpy()]
+        entity_e_list = extract_entity(entity_id)
+
+        entity_map = {e_value[1]: e_value for e_value in entity_e_list}
+        print("entity", entity_e_list)
+        # entity_e_list = [ for s, e, si in entity_e_list]
+        o_rel_id = o_rel_ids[ib].numpy()
+        rel_list = []
+        real_count += len(input_entity_relation_value[ib])
+
+        real_data_set = set(input_entity_relation_value[ib])
+        for iv, o_rel_id_row in enumerate(o_rel_id):
+            if iv not in entity_map:
+                continue
+            sub_iv = entity_map[iv]
+            for jv, o_rel in enumerate(o_rel_id_row):
+                if o_rel == 0:
+                    continue
+                if iv == jv:
+                    continue
+                if jv not in entity_map:
+                    continue
+                obj_jv = entity_map[jv]
+                one = (int(sub_iv[2]), sub_iv[0], sub_iv[1],  int(obj_jv[2]), obj_jv[0], obj_jv[1], o_rel)
+                predict_count += 1
+                if one in real_data_set:
+                    hit_num += 1
+        print("relation", rel_list)
+        print("real", input_entity_relation_value[ib])
+        res = {
+            "hit_num": hit_num,
+            "real_count": real_count,
+            "predict_count":  predict_count
+        }
+        print(res)
+
 
 data_iter = DataIter(data_loader)
 epoch = 100
@@ -206,6 +266,8 @@ for ep in range(epoch):
                                 batch_data["max_len"])
         if batch_i % 100 == 0:
             print("epoch {0} batch {1} loss value {2}".format(ep, batch_i, loss_value))
+            print(evaluation(batch_data["char_encode_id"],
+                                batch_data["word_encode_id"], batch_data["entity_relation_value"]))
     break
 
 
