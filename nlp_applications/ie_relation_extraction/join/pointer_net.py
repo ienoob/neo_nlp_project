@@ -117,7 +117,7 @@ class DataIterator(object):
             if len(batch_data) == input_batch_num:
                 yield self.padding_batch_data(batch_data)
                 batch_data = []
-        if  batch_data:
+        if batch_data:
             yield self.padding_batch_data(batch_data)
 
     def test_iter(self, input_batch_num):
@@ -234,7 +234,6 @@ def loss_func(input_y, logits, input_mask):
     loss_va = tf.keras.losses.mse(input_y, logits)
 
     return tf.reduce_mean(loss_va)
-
 
 
 @tf.function(experimental_relax_shapes=True)

@@ -8,9 +8,13 @@
 
 """
 import json
+import jieba
+
+
 
 class LoaderDataSet(object):
     pass
+
 
 class LoadMsraDataV1(object):
 
@@ -454,7 +458,9 @@ class LoaderDuie2Dataset(object):
         self.relation2id = dict()
         self.subject2id = dict()
         self.object2id = dict()
-        self.entity2id = dict()
+        self.entity2id = {
+            "unk": 0
+        }
         self.triple_set = set()
         self.entity_couple_set = set()
         self.max_seq_len = 0
@@ -488,6 +494,10 @@ class LoaderDuie2Dataset(object):
             "<pad>": 0,
             "<unk>": 1
         }
+        self.word2id = {
+            "<pad>": 0,
+            "<unk>": 1
+        }
 
         self.documents = []
         for i, train_data in enumerate(train_data_list):
@@ -500,6 +510,10 @@ class LoaderDuie2Dataset(object):
                 if tt not in self.char2id:
                     self.char2id[tt] = len(self.char2id)
                 train_text_id.append(self.char2id[tt])
+
+            for tword in jieba.cut(train_text):
+                if tword not in self.word2id:
+                    self.word2id[tword] = len(self.word2id)
 
             spo_list = train_data["spo_list"]
 
@@ -549,6 +563,7 @@ class LoaderDuie2Dataset(object):
         self.test_documents = []
         for i, test_data in enumerate(test_data_list):
             test_text = test_data["text"]
+            self.max_seq_len = max(self.max_seq_len, len(test_text))
             test_text_id = []
             for tt in test_text:
                 test_text_id.append(self.char2id.get(tt, 1))
@@ -569,6 +584,10 @@ class LoaderDuie2Dataset(object):
                 if tt not in self.char2id:
                     self.char2id[tt] = len(self.char2id)
                 train_text_id.append(self.char2id[tt])
+
+            for tword in jieba.cut(train_text):
+                if tword not in self.word2id:
+                    self.word2id[tword] = len(self.word2id)
 
             spo_list = train_data["spo_list"]
 
@@ -642,9 +661,6 @@ class LoaderDuie2Dataset(object):
             "recall": (hit + 1e-8) / (d_count + 1e-3),
             "precision": (hit + 1e-8) / (p_count + 1e-3)
         }
-
-
-
 
 
 class Argument(object):
@@ -1004,7 +1020,6 @@ class QaDocument(object):
         self._qa_list.append(qa)
 
 
-
 class LoaderDuReaderChecklist(object):
 
     def __init__(self, data_path):
@@ -1046,3 +1061,24 @@ class LoaderBaiduDialogV1(object):
     def __init__(self, data_path):
         self.train_path = data_path+"\\Dialog_sample\Dialog_sample\\"
 
+
+class BaseDataIterator(object):
+
+    def __init__(self, input_loader):
+        self.data_loader = input_loader
+
+    def single_doc_processor(self, doc: Document):
+        pass
+
+    def padding_batch_data(self, input_batch_data):
+        pass
+
+    def train_iter(self, input_batch_num):
+        c_batch_data = []
+        for doc in self.data_loader.documents:
+            c_batch_data.append(self.single_doc_processor(doc))
+            if len(c_batch_data) == input_batch_num:
+                yield self.padding_batch_data(c_batch_data)
+                c_batch_data = []
+        if c_batch_data:
+            yield self.padding_batch_data(c_batch_data)
