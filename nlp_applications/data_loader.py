@@ -66,7 +66,8 @@ class LoadMsraDataV2(object):
                        "B-POSTALCODE", "I-POSTALCODE", "B-RATE", "I-RATE", "B-SPEED", "I-SPEED",
                        "B-TEMPERATURE", "I-TEMPERATURE", "B-TIME", "I-TIME", "B-WEIGHT", "I-WEIGHT",
                        "B-WWW", "I-WWW"]
-        self.label2id = {"pad": 0}
+        # self.label2id = {"pad": 0}
+        self.label2id = {}
         for la in self.labels:
             if la not in self.label2id:
                 self.label2id[la] = len(self.label2id)
