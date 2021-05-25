@@ -141,3 +141,6 @@ if __name__ == "__main__":
     print(metrix(true_labels, predict_labels))
 
     print(crf_mode.extract_ner("1月18日，在印度东北部一座村庄，一头小象和家人走过伐木工人正在清理的区域时被一根圆木难住了。"))
+    """
+         (0.7184701040910191, 0.803030303030303)
+    """
