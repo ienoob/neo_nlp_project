@@ -164,7 +164,7 @@ ckpt_manager = tf.train.CheckpointManager(ckpt,
                                           output_dir,
                                           checkpoint_name='model.ckpt',
                                           max_to_keep=3)
-epoch = 5
+epoch = 20
 for ep in range(epoch):
 
     for batch, (trainv, labelv) in enumerate(dataset.take(-1)):
@@ -216,5 +216,6 @@ print(metrix(true_labels, predict_labels))
 
 """
 crf 层一加，效果比较明显的提高
-    (0.3783587509077705, 0.5823397913561847) 
+    训练50epoch 
+    (0.6959573953038005, 0.8118029083721587) 
 """
