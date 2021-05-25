@@ -147,7 +147,7 @@ if __name__ == "__main__":
     dataset = MRCNERDataset(json_path=json_path, tokenizer=tokenizer,  max_length=512,
                             is_chinese=is_chinese, pad_to_maxlen=False)
 
-    dataloader = DataLoader(dataset, batch_size=32,
+    dataloader = DataLoader(dataset, batch_size=32, num_workers=1,
                             collate_fn=collate_to_max_length)
 
     bert_config = BertQueryNerConfig.from_pretrained(bert_model_name,
@@ -176,5 +176,6 @@ if __name__ == "__main__":
                                                              end_label_mask=end_label_mask
                                                              )
         print(start_loss, end_loss, match_loss)
+        total_loss = 0.5 * start_loss + 0.5 * end_loss + 0.5 * match_loss
 
         optimizer.step()

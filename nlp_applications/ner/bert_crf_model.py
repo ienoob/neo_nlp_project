@@ -20,13 +20,14 @@ class DataIterator(object):
     def __init__(self, input_loader, input_batch_num):
         self.input_loader = input_loader
         self.input_batch_num = input_batch_num
-        self.entity_label2id = {"O": 0}
+        self.entity_label2id = {"O": 1, "pad": 0}
         self.max_len = 0
         self.tokenizer = BertTokenizer.from_pretrained(bert_model_name)
 
     def _transformer2feature(self, sentence, label_list):
         sentence_id = self.tokenizer.encode(sentence)
         label_id = [self.input_loader.label2id[label_i] for label_i in label_list]
+        label_id = [1] + label_id + [0]
         sentence_mask = [1 for _ in sentence_id]
 
         return {
@@ -43,8 +44,9 @@ class DataIterator(object):
             batch_sentence_id.append(data["sentence_id"])
             batch_label_id.append(data["label_id"])
             batch_sentence_mask.append(data["sentence_mask"])
+
         batch_sentence_id = tf.keras.preprocessing.sequence.pad_sequences(batch_sentence_id, padding="post", maxlen=512)
-        batch_label_id = tf.keras.preprocessing.sequence.pad_sequences(batch_label_id, padding="post", maxlen=510)
+        batch_label_id = tf.keras.preprocessing.sequence.pad_sequences(batch_label_id, padding="post", maxlen=512)
         batch_sentence_mask = tf.keras.preprocessing.sequence.pad_sequences(batch_sentence_mask, padding="post", maxlen=512)
         return {
             "sentence_id": batch_sentence_id,
@@ -78,7 +80,7 @@ class BertCrfModel(tf.keras.Model):
         # seg_id = tf.zeros(mask.shape)
         text_lens = tf.math.reduce_sum(tf.cast(tf.math.not_equal(inputs, 0), dtype=tf.int32), axis=-1)
         outputs = self.bert_model(inputs, attention_mask=mask)
-        outputs = outputs[0][:, 1:-1, :]
+        outputs = outputs[0]
 
         out_tags = self.out(outputs)
 
@@ -89,8 +91,6 @@ class BertCrfModel(tf.keras.Model):
             return out_tags, text_lens, log_likelihood
         else:
             return out_tags, text_lens
-
-
 
 
 bert_crf_model = BertCrfModel(bert_model_name)
@@ -136,6 +136,7 @@ for ep in range(epoch):
         if batch_i % 100 == 0:
             print("epoch {0} batch {1} loss is {2}".format(ep, batch_i, loss))
             bert_crf_model.save_weights(bert_crf_model_path, save_format='tf')
+
 
 def predict(input_s_list):
     # max_v_len = max([len(input_s) for input_s in input_s_list])

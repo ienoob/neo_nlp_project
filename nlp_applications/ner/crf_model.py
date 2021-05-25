@@ -56,7 +56,7 @@ def sent2labels(sent):
 
 class CRFNerModel(object):
 
-    def __init__(self):
+    def __init__(self, is_save=False):
         self.crf = CRF(
             algorithm='lbfgs',
             c1=0.1,
@@ -64,19 +64,24 @@ class CRFNerModel(object):
             max_iterations=100,
             all_possible_transitions=True
         )
+        self.is_save = is_save
         self.save_model = "crf.model"
 
     def fit(self, train_x, train_y):
         self.crf.fit(train_x, train_y)
 
-        model_data = pickle.dumps(self.crf)
-        with open(self.save_model, "wb") as f:
-            f.write(model_data)
+        if self.is_save:
+            self.dump_model()
 
     def predict(self, input_x):
         input_x = list(input_x)
         input_feature = [sent2features(input_x)]
         return self.crf.predict(input_feature)
+
+    def dump_model(self):
+        model_data = pickle.dumps(self.crf)
+        with open(self.save_model, "wb") as f:
+            f.write(model_data)
 
     def load_model(self):
         with open(self.save_model, "rb") as f:
