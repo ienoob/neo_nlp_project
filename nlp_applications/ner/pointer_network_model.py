@@ -7,3 +7,9 @@
     @File    : pointer_network_model.py
 
 """
+import tensorflow as tf
+
+
+class PointerNetworkModel(tf.keras.Model):
+    def __init__(self):
+        super(PointerNetworkModel, self).__init__()
