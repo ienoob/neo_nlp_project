@@ -10,6 +10,7 @@
 """
     鉴于单纯的rnn模型不行，这里试着增加crf层
 """
+import jieba
 import tensorflow as tf
 from nlp_applications.data_loader import LoadMsraDataV2
 from nlp_applications.ner.evaluation import metrix
@@ -34,17 +35,27 @@ class TF2CRF(tf.keras.layers.Layer):
 msra_data = LoadMsraDataV2("D:\data\\nlp\\命名实体识别\\msra_ner_token_level\\")
 
 char2id = {"pad": 0, "unk": 1}
+word2id = {"pad": 0, "unk": 1}
 max_len = -1
 msra_train_id = []
+msra_train_word_id = []
 for sentence in msra_data.train_sentence_list:
     sentence_id = []
+    sentence_word_id = []
     for s in sentence:
         if s not in char2id:
             char2id[s] = len(char2id)
         sentence_id.append(char2id[s])
+    for word in jieba.cut(sentence):
+        if word not in word2id:
+            word2id[word] = len(word2id)
+        for _ in word:
+            sentence_word_id.append(word2id[word])
+    assert len(sentence_id) == len(sentence_word_id)
     if len(sentence_id) > max_len:
         max_len = len(sentence_id)
     msra_train_id.append(sentence_id)
+    msra_train_word_id.append(sentence_word_id)
 
 tag_list = msra_data.train_tag_list
 label2id = {"O": 0}
@@ -65,11 +76,13 @@ rnn_dim = 10
 class_num = len(label2id)
 
 train_data = tf.keras.preprocessing.sequence.pad_sequences(msra_train_id, padding="post", maxlen=max_len)
+train_word_data = tf.keras.preprocessing.sequence.pad_sequences(msra_train_word_id, padding="post", maxlen=max_len)
 label_data = tf.keras.preprocessing.sequence.pad_sequences(msra_tag_id, padding="post", maxlen=max_len)
-dataset = tf.data.Dataset.from_tensor_slices((train_data, label_data)).shuffle(100).batch(100)
+dataset = tf.data.Dataset.from_tensor_slices((train_data, train_word_data, label_data)).shuffle(100).batch(100)
 
 
 char_size = len(char2id)+1
+word_size = len(word2id)+1
 embedding_size = 64
 lstm_dim = 10
 label_num = len(label2id)
@@ -104,10 +117,43 @@ class LSTMCRF(tf.keras.Model):
             return logits, text_lens
 
 
+class LSTMCRFV2(tf.keras.Model):
+
+    def __init__(self):
+        super(LSTMCRFV2, self).__init__()
+
+        self.embedding = tf.keras.layers.Embedding(char_size, embedding_size)
+        self.word_embeding = tf.keras.layers.Embedding(word_size, embedding_size)
+        self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_dim, return_sequences=True))
+        self.dense = tf.keras.layers.Dense(label_num)
+
+        self.transition_params = tf.Variable(tf.random.uniform(shape=(label_num, label_num)))
+        self.dropout = tf.keras.layers.Dropout(0.5)
+
+    def call(self, input_text, input_text_word, labels=None,  training=None):
+        text_lens = tf.math.reduce_sum(tf.cast(tf.math.not_equal(input_text, 0), dtype=tf.int32), axis=-1)
+        mask = tf.math.logical_not(tf.math.equal(input_text, 0))
+        inputs = self.embedding(input_text)
+        inputs_word = self.word_embeding(input_text_word)
+        inputs = tf.concat([inputs, inputs_word], axis=-1)
+        inputs = self.bi_lstm(inputs, mask=mask)
+        inputs = self.dropout(inputs, training)
+        logits = self.dense(inputs)
+
+        if labels is not None:
+            label_sequences = tf.convert_to_tensor(labels, dtype=tf.int32)
+            log_likelihood, self.transition_params = crf_log_likelihood(logits, label_sequences, text_lens,self.transition_params)
+
+            return logits, text_lens, log_likelihood
+        else:
+            return logits, text_lens
+
 
 model = LSTMCRF()
-input_x_sample = tf.constant([[1, 2]])
-input_y_sample = tf.constant([[1, 2]])
+
+
+def run_test_model():
+    pass
 # output_y, _,  = model(input_x_sample, True)
 
 optimizer = tf.keras.optimizers.Adam()
@@ -127,10 +173,10 @@ def loss_func(input_y, logits):
 
 
 @tf.function()
-def train_step(input_xx, input_yy):
+def train_step(input_xx, input_xx_word, input_yy):
 
     with tf.GradientTape() as tape:
-        logits, text_len, log_likelihood = model(input_xx, input_yy, True)
+        logits, text_len, log_likelihood = model(input_xx, input_xx_word, input_yy, True)
         loss_v = -tf.reduce_mean(log_likelihood)
         loss_v += loss_func(input_yy, logits)
 
@@ -139,6 +185,7 @@ def train_step(input_xx, input_yy):
     optimizer.apply_gradients(zip(gradients, variables))
 
     return loss_v, logits, text_len
+
 
 def get_acc_one_step(logits, text_lens, labels_batch):
     paths = []
@@ -167,8 +214,8 @@ ckpt_manager = tf.train.CheckpointManager(ckpt,
 epoch = 20
 for ep in range(epoch):
 
-    for batch, (trainv, labelv) in enumerate(dataset.take(-1)):
-        loss, logits, text_lens = train_step(trainv, labelv)
+    for batch, (trainv, trainv_word, labelv) in enumerate(dataset.take(-1)):
+        loss, logits, text_lens = train_step(trainv, trainv_word, labelv)
 
         if batch % 10 == 0:
             accuracy = get_acc_one_step(logits, text_lens, labelv)
@@ -179,6 +226,7 @@ for ep in range(epoch):
 
 ckpt = tf.train.Checkpoint(optimizer=optimizer,model=model)
 ckpt.restore(tf.train.latest_checkpoint(output_dir))
+
 
 def predict(input_s_list):
     max_v_len = max([len(input_s) for input_s in input_s_list])
@@ -203,10 +251,46 @@ def predict(input_s_list):
     print(output_label[0])
 
     return output_label
-    # print([id2tag[id] for id in paths[0]])
-    #
-    # entities_result = format_result(list(text), [id2tag[id] for id in paths[0]])
-    # print(json.dumps(entities_result, indent=4, ensure_ascii=False))
+
+
+def predict_v2(input_s_list):
+    batch_num = 100
+    paths = []
+
+    b_int = int(len(input_s_list)//batch_num) + 1
+
+    for bi in range(b_int):
+        input_s_list_v = input_s_list[bi*batch_num:bi*batch_num+batch_num]
+        if len(input_s_list_v) == 0:
+            continue
+
+
+        max_v_len = max([len(input_s) for input_s in input_s_list])
+        dataset = tf.keras.preprocessing.sequence.pad_sequences([[char2id.get(char, 0) for char in input_str] for input_str in input_s_list], padding='post', maxlen=max_v_len)
+        dataset_word = []
+
+        dataset_word = tf.keras.preprocessing.sequence.pad_sequences(
+            [[word2id.get(char, 0) for char in input_str] for input_str in input_s_list], padding='post', maxlen=max_v_len)
+        logits, text_lens = model(dataset)
+
+        for logit, text_len in zip(logits, text_lens):
+            viterbi_path, _ = viterbi_decode(logit[:text_len], model.transition_params)
+            paths.append(viterbi_path)
+
+    output_label = []
+    for i, output_id in enumerate(paths):
+        olen = len(output_id)
+        ilen = len(input_s_list[i])
+        if olen < ilen:
+            output_label.append([id2label[o] for o in output_id]+["O"]*(ilen-olen))
+        else:
+            output_label.append([id2label[o] for o in output_id][:ilen])
+    # output_label = [[id2label[o] for o in output_id] for i, output_id in
+    #                 enumerate(paths)]
+
+
+    return output_label
+
 
 predict(["1月18日，在印度东北部一座村庄，一头小象和家人走过伐木工人正在清理的区域时被一根圆木难住了。"])
 predict_labels = predict(msra_data.test_sentence_list)
