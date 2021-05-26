@@ -14,6 +14,11 @@ bio 序列标注模型
 6) bert + crf  
 7) pointer_network  
 
+| 方法 | recall | precision |
+| ---- | -------| ---------|
+| crf  | 0.7185 |  0.8030  |
+| bi-lstm | 0.6139 | 0.7107 |
+| bi-lstm+crf | 0.6960 | 0.8118 |
 
 ## 相关提高方法
 1) word-level feature
