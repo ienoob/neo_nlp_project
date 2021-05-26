@@ -72,7 +72,6 @@ class Encoder(tf.keras.models.Model):
         self.embed = tf.keras.layers.Embedding(encoder_char_size, encoder_embed)
         self.lstm = tf.keras.layers.LSTM(encoder_lstm_embed, return_state=True)
 
-
     def call(self, inputs, training=None, mask=None):
         x = self.embed(inputs)
         x, c_state, s_state = self.lstm(x)
@@ -100,6 +99,7 @@ class Decoder(tf.keras.models.Model):
 
 
 optimizer = tf.keras.optimizers.Adam()
+
 
 def loss_func(input_y, logits):
     _loss_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
@@ -148,7 +148,6 @@ for ep in range(epoch):
 
 
 def predict(input_s_list):
-
     input_s_id = [[char2id.get(s, 1) for s in input_s] for input_s in input_s_list]
     max_v_len = max([len(input_s) for input_s in input_s_list])
     input_s_id = tf.keras.preprocessing.sequence.pad_sequences(input_s_id, padding="post", maxlen=max_v_len)
