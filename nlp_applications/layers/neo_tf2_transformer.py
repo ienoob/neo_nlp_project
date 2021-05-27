@@ -26,7 +26,7 @@ def position_embed(input_batch, data_maxlen, embed_size):
     return positon_embed_out
 
 
-def self_attention(q, k, v, dim_k):
+def self_attention(q, k, v, dim_k, mask=None):
 
     k = tf.transpose(k, [0, 1, 3, 2])
     qk = tf.matmul(q, k)

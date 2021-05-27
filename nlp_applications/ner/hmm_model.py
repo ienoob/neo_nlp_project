@@ -54,4 +54,15 @@ for i, olist in enumerate(msra_data.train_sentence_list):
 
         trainsmit_matrix[o_id][label_id] += 1
 
+transferring_matrix_sum = transferring_matrix.sum(axis=1)
+transferring_matrix_sum = transferring_matrix_sum.reshape((n_label, 1))
+
+trainsmit_matrix_sum = trainsmit_matrix.sum(axis=1)
+trainsmit_matrix_sum = trainsmit_matrix_sum.reshape((n_observer, 1))
+
+transferring_matrix = transferring_matrix/transferring_matrix_sum
+trainsmit_matrix = trainsmit_matrix/trainsmit_matrix_sum
+
+init_transferring = init_transferring/init_transferring.sum()
+
 
