@@ -263,5 +263,26 @@ class NEOCRF(tf.keras.layers.Layer):
 
         return best_tags_list
 
+class_num = 2
+
 class NeoCRFV2(tf.keras.layers.Layer):
-    pass
+
+
+    def __init__(self):
+        super(NeoCRFV2, self).__init__()
+        self.transitions = tf.Variable()
+
+    def _score_sentence(self, feature, tags):
+
+        pass
+
+    def _viterbi_decode(self, frames):
+        backtrace = []
+
+
+
+
+    def call(self, inputs, *args, **kwargs):
+        pass
+
+
