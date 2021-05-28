@@ -840,6 +840,7 @@ if __name__ == "__main__":
 
             test_train, test_train_data, test_train_label = sample_data(event_type, role_value, train_data)
             test_eval, test_eval_data, test_eval_label = sample_data(event_type, role_value, eval_data)
+
             logger.info("event {0} start, role {1} start, train_data {2}".format(event_type, role_value, len(test_train)))
             if len(test_train) == 0:
                 continue
