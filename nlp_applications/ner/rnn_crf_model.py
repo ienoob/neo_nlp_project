@@ -16,23 +16,8 @@ from nlp_applications.data_loader import LoadMsraDataV2
 from nlp_applications.ner.evaluation import metrix
 from nlp_applications.ner.crf_addons import crf_log_likelihood, viterbi_decode
 
-
-class TF2CRF(tf.keras.layers.Layer):
-
-    def __init__(self, num_tags, batch_first):
-        super(TF2CRF, self).__init__()
-
-        # self.average_batch = False
-        # self.tagset_size = tagset_size
-        #
-        # init_transitions = tf.zeros(self.tagset+2, self.tagset_size+2)
-        self.num_tags = num_tags
-        self.batch_first = batch_first
-        self.start_transitions = tf.keras.layers.Dense(num_tags)
-        self.end_transitions = tf.keras.layers.Dense(num_tags)
-        self.transitions = tf.keras.layers.Dense(num_tags)
-
-msra_data = LoadMsraDataV2("D:\data\\nlp\\命名实体识别\\msra_ner_token_level\\")
+data_path = "D:\data\\nlp\\命名实体识别\\msra_ner_token_level\\"
+msra_data = LoadMsraDataV2(data_path)
 
 char2id = {"pad": 0, "unk": 1}
 word2id = {"pad": 0, "unk": 1}
@@ -149,7 +134,7 @@ class LSTMCRFV2(tf.keras.Model):
             return logits, text_lens
 
 
-model = LSTMCRF()
+model = LSTMCRFV2()
 
 
 def run_test_model():
@@ -157,7 +142,6 @@ def run_test_model():
 # output_y, _,  = model(input_x_sample, True)
 
 optimizer = tf.keras.optimizers.Adam()
-
 
 def loss_func(input_y, logits):
     cross_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
@@ -264,14 +248,12 @@ def predict_v2(input_s_list):
         if len(input_s_list_v) == 0:
             continue
 
-
         max_v_len = max([len(input_s) for input_s in input_s_list])
         dataset = tf.keras.preprocessing.sequence.pad_sequences([[char2id.get(char, 0) for char in input_str] for input_str in input_s_list], padding='post', maxlen=max_v_len)
-        dataset_word = []
 
         dataset_word = tf.keras.preprocessing.sequence.pad_sequences(
             [[word2id.get(char, 0) for char in input_str] for input_str in input_s_list], padding='post', maxlen=max_v_len)
-        logits, text_lens = model(dataset)
+        logits, text_lens = model(dataset, dataset_word)
 
         for logit, text_len in zip(logits, text_lens):
             viterbi_path, _ = viterbi_decode(logit[:text_len], model.transition_params)
