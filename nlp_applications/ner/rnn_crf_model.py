@@ -288,7 +288,6 @@ def predict_v2(input_s_list):
     # output_label = [[id2label[o] for o in output_id] for i, output_id in
     #                 enumerate(paths)]
 
-
     return output_label
 
 

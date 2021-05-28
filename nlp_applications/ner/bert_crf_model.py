@@ -96,7 +96,7 @@ class BertCrfModel(tf.keras.Model):
 bert_crf_model = BertCrfModel(bert_model_name)
 
 
-optimizer = tf.keras.optimizers.Adam()
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
 
 
 def loss_func(input_y, logits):
@@ -125,7 +125,16 @@ def train_step(input_xx, input_yy, input_mask):
     return loss_v
 
 batch_num = 10
-bert_crf_model_path = "D:\\tmp\\bert_crf\\model"
+bert_crf_model_path = "D:\\tmp\\bert_crf"
+
+ckpt = tf.train.Checkpoint(optimizer=optimizer, model=bert_crf_model)
+ckpt.restore(tf.train.latest_checkpoint(bert_crf_model_path))
+ckpt_manager = tf.train.CheckpointManager(ckpt,
+                                          bert_crf_model_path,
+                                          checkpoint_name='model.ckpt',
+                                          max_to_keep=3)
+
+
 data_iterator = DataIterator(msra_data, batch_num)
 epoch = 5
 for ep in range(epoch):
@@ -135,8 +144,12 @@ for ep in range(epoch):
 
         if batch_i % 100 == 0:
             print("epoch {0} batch {1} loss is {2}".format(ep, batch_i, loss))
-            bert_crf_model.save_weights(bert_crf_model_path, save_format='tf')
+            ckpt_manager.save()
+            # bert_crf_model.save_weights(bert_crf_model_path, save_format='tf')
 
+
+ckpt = tf.train.Checkpoint(optimizer=optimizer,model=bert_crf_model)
+ckpt.restore(tf.train.latest_checkpoint(bert_crf_model_path))
 
 def predict(input_s_list):
     # max_v_len = max([len(input_s) for input_s in input_s_list])
