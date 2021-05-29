@@ -9,10 +9,8 @@
 """
 import pickle
 from sklearn_crfsuite import CRF
-from sklearn_crfsuite import scorers
-from sklearn_crfsuite import metrics
 from nlp_applications.data_loader import LoadMsraDataV1, LoadMsraDataV2
-from nlp_applications.ner.evaluation import metrix
+from nlp_applications.ner.evaluation import metrix_v2
 
 
 def word2features(sent, i):
@@ -20,12 +18,14 @@ def word2features(sent, i):
 
     features = {
         'bias': 1.0,
-        'word_lower()': word.lower()
+        'word_lower()': word.lower(),
+        "word_isdigit()": word.isdigit()
     }
     if i > 0:
         word1 = sent[i - 1]
         features.update({
-            '-1:word.lower()': word1.lower()
+            '-1:word.lower()': word1.lower(),
+            '-1:word.isdigit()': word1.isdigit()
         })
     else:
         features['BOS'] = True
@@ -33,7 +33,8 @@ def word2features(sent, i):
     if i < len(sent) - 1:
         word1 = sent[i + 1]
         features.update({
-            '+1:word.lower()': word1.lower()
+            '+1:word.lower()': word1.lower(),
+            '+1:word.isdigit()': word1.isdigit()
         })
     else:
         features['EOS'] = True
@@ -132,13 +133,13 @@ if __name__ == "__main__":
     print(len(y_train))
 
     crf_mode = CRFNerModel()
-    crf_mode.load_model()
-    # crf_mode.fit(X_train, y_train)
+    # crf_mode.load_model()
+    crf_mode.fit(X_train, y_train)
 
     predict_labels = crf_mode.predict_list(X_test)
     true_labels = y_test
 
-    print(metrix(true_labels, predict_labels))
+    print(metrix_v2(true_labels, predict_labels))
 
     print(crf_mode.extract_ner("1月18日，在印度东北部一座村庄，一头小象和家人走过伐木工人正在清理的区域时被一根圆木难住了。"))
     """
