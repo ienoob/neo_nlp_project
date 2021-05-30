@@ -18,7 +18,7 @@ import tensorflow as tf
 
 class MultiHeaderModel(tf.keras.Model):
 
-    def __init__(self, char_size, char_embed, word_size, entity_num, entity_embed_size, rel_num):
+    def __init__(self, char_size, char_embed, word_size, entity_num, entity_embed_size, rel_num, rel_embed_size):
         super(MultiHeaderModel, self).__init__()
 
         self.char_embed = tf.keras.layers.Embedding(char_size, char_embed)
@@ -26,21 +26,21 @@ class MultiHeaderModel(tf.keras.Model):
         self.ent_embed = tf.keras.layers.Embedding(entity_num, entity_embed_size)
         # self.rel_embed = tf.keras.layers.Embedding(rel_num, rel_embed_size)
 
-        self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(10, return_sequences=True))
+        self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True))
 
         self.emission = tf.keras.layers.Dense(entity_num)
 
         self.crf = None
-        self.selection_u = tf.keras.layers.Dense(rel_num)
-        self.selection_v = tf.keras.layers.Dense(rel_num)
-        self.selection_uv = tf.keras.layers.Dense(rel_num)
+        self.selection_u = tf.keras.layers.Dense(rel_embed_size)
+        self.selection_v = tf.keras.layers.Dense(rel_embed_size)
+        self.selection_uv = tf.keras.layers.Dense(rel_embed_size)
 
         self.entity_classifier = tf.keras.layers.Dense(entity_num)
         self.rel_classifier = tf.keras.layers.Dense(rel_num, activation="softmax")
 
 
     def call(self, char_ids, word_ids, entity_ids=None, data_max_len=None, training=None, mask=None):
-        mask_value = tf.not_equal(char_ids, 0)
+        mask_value = tf.math.logical_not(tf.math.equal(char_ids, 0))
         char_embed = self.char_embed(char_ids)
         word_embed = self.word_embed(word_ids)
 
@@ -67,7 +67,7 @@ class MultiHeaderModel(tf.keras.Model):
         rel_logits = self.rel_classifier(uv)
         # selection_logits = tf.einsum('bijh,rh->birj', uv, self.rel_embed.get_weights())
         #
-        return entity_logits, rel_logits
+        return entity_logits, rel_logits, mask_value
 
 
 def test_run_model():

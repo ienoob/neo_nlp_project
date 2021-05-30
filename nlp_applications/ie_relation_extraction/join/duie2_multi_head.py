@@ -26,12 +26,12 @@ entity_bio_id2encoder = {v:k for k, v in entity_bio_encoder.items()}
 batch_num = 5
 char_size = len(data_loader.char2id)
 word_size = len(data_loader.word2id)
-char_embed = 10
-word_embed = 10
+char_embed = 32
+word_embed = 32
 entity_num = len(entity_bio_encoder)
-entity_embed_size = 10
+entity_embed_size = 32
 rel_num = len(data_loader.relation2id)
-rel_embed_size = 10
+rel_embed_size = 32
 
 
 class DataIter(BaseDataIterator):
@@ -125,9 +125,8 @@ class DataIter(BaseDataIterator):
 
 
 
-
 def evaluation(input_char_id, input_word_id, input_entity_relation_value, input_model):
-    o_entity_logits, o_rel_logits = input_model(input_char_id, input_word_id)
+    o_entity_logits, o_rel_logits, _ = input_model(input_char_id, input_word_id)
     o_entity_id = tf.argmax(o_entity_logits, axis=-1)
 
     o_rel_ids = tf.argmax(o_rel_logits, axis=-1)
@@ -160,6 +159,7 @@ def evaluation(input_char_id, input_word_id, input_entity_relation_value, input_
                     continue
                 obj_jv = entity_map[jv]
                 one = (int(sub_iv[2]), sub_iv[0], sub_iv[1],  int(obj_jv[2]), obj_jv[0], obj_jv[1], o_rel)
+                rel_list.append(one)
                 predict_count += 1
                 if one in real_data_set:
                     hit_num += 1
@@ -176,16 +176,16 @@ def evaluation(input_char_id, input_word_id, input_entity_relation_value, input_
 
 def main():
     # test_run_model()
-    model = MultiHeaderModel(char_size, char_embed, word_size, entity_num, entity_embed_size, rel_num)
+    model = MultiHeaderModel(char_size, char_embed, word_size, entity_num, entity_embed_size, rel_num, rel_embed_size)
     loss_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
     optimizer = tf.keras.optimizers.Adam()
 
     @tf.function(experimental_relax_shapes=True)
     def train_step(input_char_id, input_word_id, input_entity_id, input_rel_id, data_max_len):
         with tf.GradientTape() as tape:
-            o_entity_logits, o_rel_logits = model(input_char_id, input_word_id, input_entity_id, data_max_len,
+            o_entity_logits, o_rel_logits, entity_label_mask = model(input_char_id, input_word_id, input_entity_id, data_max_len,
                                                   training=True)
-            loss_v = loss_func(input_entity_id, o_entity_logits) + loss_func(input_rel_id, o_rel_logits)
+            loss_v = loss_func(input_entity_id, o_entity_logits, sample_weight=entity_label_mask) + loss_func(input_rel_id, o_rel_logits)
 
             variables = model.variables
             gradients = tape.gradient(loss_v, variables)
