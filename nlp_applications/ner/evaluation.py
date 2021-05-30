@@ -60,10 +60,11 @@ def metrix(true_labels, predict_labels):
             if k in d_pred and d_pred[k] == v:
                 predict_true += 1
 
-    recall = predict_true*1.0/true_res
-    precision = predict_true*1.0/pred_res
+    recall = (predict_true + 1e-8) / (true_res + 1e-3)
+    precision = (predict_true + 1e-8) / (pred_res + 1e-3)
 
     return recall, precision
+
 
 def metrix_v2(true_labels, predict_labels):
     true_res = 0
