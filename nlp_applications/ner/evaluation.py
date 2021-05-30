@@ -31,6 +31,8 @@ def extract_entity(input_label):
                 if label != xlabel:
                     start = None
                     label = None
+    if start is not None:
+        extract_ner.append((start, len(input_label), label))
     return extract_ner
 
 
