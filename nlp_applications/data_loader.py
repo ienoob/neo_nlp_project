@@ -456,7 +456,9 @@ class LoaderDuie2Dataset(object):
 
         self.data_len = 0
         self.entity_max_len = 0
-        self.relation2id = dict()
+        self.relation2id = {
+            "pad": 0
+        }
         self.subject2id = dict()
         self.object2id = dict()
         self.entity2id = {
