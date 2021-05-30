@@ -24,18 +24,18 @@ class MultiHeaderModel(tf.keras.Model):
         self.char_embed = tf.keras.layers.Embedding(char_size, char_embed)
         self.word_embed = tf.keras.layers.Embedding(word_size, char_embed)
         self.ent_embed = tf.keras.layers.Embedding(entity_num, entity_embed_size)
-        # self.rel_embed = tf.keras.layers.Embedding(rel_num, rel_embed_size)
+        self.rel_embed = tf.keras.layers.Embedding(rel_num, rel_embed_size)
 
         self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True))
 
-        self.emission = tf.keras.layers.Dense(entity_num)
+        # self.emission = tf.keras.layers.Dense(entity_num)
 
         self.crf = None
         self.selection_u = tf.keras.layers.Dense(rel_embed_size)
         self.selection_v = tf.keras.layers.Dense(rel_embed_size)
         self.selection_uv = tf.keras.layers.Dense(rel_embed_size)
 
-        self.entity_classifier = tf.keras.layers.Dense(entity_num)
+        self.entity_classifier = tf.keras.layers.Dense(entity_num, activation="softmax")
         self.rel_classifier = tf.keras.layers.Dense(rel_num, activation="softmax")
 
 
@@ -65,19 +65,21 @@ class MultiHeaderModel(tf.keras.Model):
         uv = self.selection_uv(tf.concat((u, v), axis=-1))
         # print(self.rel_embed.get_weights())
         rel_logits = self.rel_classifier(uv)
-        # selection_logits = tf.einsum('bijh,rh->birj', uv, self.rel_embed.get_weights())
+        # selection_logits = tf.einsum('bijh,rh->birj', uv, self.rel_embed.get_weights()[0])
         #
         return entity_logits, rel_logits, mask_value
 
 
 def test_run_model():
-    model = MultiHeaderModel()
+    model = MultiHeaderModel(10, 10, 10, 10, 10, 10, 10)
     sample_char_id = tf.constant([[1, 2]])
     sample_word_id = tf.constant([[2, 3]])
     sample_entity_id = tf.constant([[1, 2]])
     sample_rel_id = tf.constant([[[1, 2], [2, 1]]])
 
-    o_entity_logits, o_rel_logits = model(sample_char_id, sample_word_id, sample_entity_id)
-    loss_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+    o_entity_logits, o_rel_logits, _ = model(sample_char_id, sample_word_id, sample_entity_id)
+    # loss_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+    #
+    # print(loss_func(sample_rel_id, o_rel_logits))
 
-    print(loss_func(sample_rel_id, o_rel_logits))
+test_run_model()
