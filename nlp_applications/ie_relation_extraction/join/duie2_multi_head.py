@@ -240,7 +240,7 @@ def main():
         return loss_v
 
     data_iter = DataIter(data_loader)
-    epoch = 10
+    epoch = 20
     for ep in range(epoch):
         for batch_i, batch_data in enumerate(data_iter.train_iter(batch_num)):
 
@@ -268,6 +268,11 @@ def main():
         evaluation_res["hit_num"] += sub_eval_res["hit_num"]
         evaluation_res["real_count"] += sub_eval_res["real_count"]
         evaluation_res["predict_count"] += sub_eval_res["predict_count"]
+
+    evaluation_res["recall"] = (evaluation_res["hit_num"] + 1e-8) / (evaluation_res["real_count"] + 1e-3)
+    evaluation_res["precision"] = (evaluation_res["hit_num"] + 1e-8) / (evaluation_res["predict_count"] + 1e-3)
+
+    evaluation_res["f1_value"] = 2 * evaluation_res["recall"] * evaluation_res["precision"] / (evaluation_res["recall"] + evaluation_res["precision"])
 
     print(evaluation_res)
 
