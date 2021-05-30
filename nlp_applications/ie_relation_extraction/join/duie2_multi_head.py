@@ -16,6 +16,7 @@ from nlp_applications.ie_relation_extraction.join.multi_head import MultiHeaderM
 
 data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取\\"
 data_loader = LoaderDuie2Dataset(data_path)
+triple_regularity = data_loader.triple_set
 entity_bio_encoder = {"O": 0}
 
 for i in range(1, len(data_loader.entity2id)):
@@ -192,6 +193,8 @@ def evaluation(input_char_id, input_word_id, input_entity_relation_value, input_
                 if jv not in entity_map:
                     continue
                 obj_jv = entity_map[jv]
+                if (int(sub_iv[2]), o_rel, int(obj_jv[2])) not in triple_regularity:
+                    continue
                 one = (int(sub_iv[2]), sub_iv[0], sub_iv[1]-1,  int(obj_jv[2]), obj_jv[0], obj_jv[1]-1, o_rel)
                 rel_list.append(one)
                 predict_count += 1
