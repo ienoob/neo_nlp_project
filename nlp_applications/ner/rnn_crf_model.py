@@ -13,11 +13,26 @@
 import jieba
 import tensorflow as tf
 from nlp_applications.data_loader import LoadMsraDataV2
-from nlp_applications.ner.evaluation import metrix
+from nlp_applications.ner.evaluation import metrix, metrix_v2
 from nlp_applications.ner.crf_addons import crf_log_likelihood, viterbi_decode
 
-data_path = "D:\data\\nlp\\命名实体识别\\msra_ner_token_level\\"
-msra_data = LoadMsraDataV2(data_path)
+
+class TF2CRF(tf.keras.layers.Layer):
+
+    def __init__(self, num_tags, batch_first):
+        super(TF2CRF, self).__init__()
+
+        # self.average_batch = False
+        # self.tagset_size = tagset_size
+        #
+        # init_transitions = tf.zeros(self.tagset+2, self.tagset_size+2)
+        self.num_tags = num_tags
+        self.batch_first = batch_first
+        self.start_transitions = tf.keras.layers.Dense(num_tags)
+        self.end_transitions = tf.keras.layers.Dense(num_tags)
+        self.transitions = tf.keras.layers.Dense(num_tags)
+
+msra_data = LoadMsraDataV2("D:\data\\nlp\\命名实体识别\\msra_ner_token_level\\")
 
 char2id = {"pad": 0, "unk": 1}
 word2id = {"pad": 0, "unk": 1}
@@ -31,6 +46,7 @@ for sentence in msra_data.train_sentence_list:
         if s not in char2id:
             char2id[s] = len(char2id)
         sentence_id.append(char2id[s])
+    sentence = "".join(sentence)
     for word in jieba.cut(sentence):
         if word not in word2id:
             word2id[word] = len(word2id)
@@ -143,6 +159,7 @@ def run_test_model():
 
 optimizer = tf.keras.optimizers.Adam()
 
+
 def loss_func(input_y, logits):
     cross_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
     mask = tf.math.logical_not(tf.math.equal(input_y, 0))
@@ -195,7 +212,7 @@ ckpt_manager = tf.train.CheckpointManager(ckpt,
                                           output_dir,
                                           checkpoint_name='model.ckpt',
                                           max_to_keep=3)
-epoch = 20
+epoch = 10
 for ep in range(epoch):
 
     for batch, (trainv, trainv_word, labelv) in enumerate(dataset.take(-1)):
@@ -207,9 +224,8 @@ for ep in range(epoch):
             ckpt_manager.save()
 
 
-
-ckpt = tf.train.Checkpoint(optimizer=optimizer,model=model)
-ckpt.restore(tf.train.latest_checkpoint(output_dir))
+# ckpt = tf.train.Checkpoint(optimizer=optimizer,model=model)
+# ckpt.restore(tf.train.latest_checkpoint(output_dir))
 
 
 def predict(input_s_list):
@@ -245,14 +261,22 @@ def predict_v2(input_s_list):
 
     for bi in range(b_int):
         input_s_list_v = input_s_list[bi*batch_num:bi*batch_num+batch_num]
+        print(bi, b_int)
         if len(input_s_list_v) == 0:
             continue
 
         max_v_len = max([len(input_s) for input_s in input_s_list])
-        dataset = tf.keras.preprocessing.sequence.pad_sequences([[char2id.get(char, 0) for char in input_str] for input_str in input_s_list], padding='post', maxlen=max_v_len)
+        dataset = tf.keras.preprocessing.sequence.pad_sequences([[char2id.get(char, 0) for char in input_str] for input_str in input_s_list_v], padding='post', maxlen=max_v_len)
+        dataset_word = []
+        for sentence in input_s_list_v:
+            sentence = "".join(sentence)
+            word_ids = []
+            for word in jieba.cut(sentence):
+                for _ in word:
+                    word_ids.append(word2id.get(word, 0))
+            dataset_word.append(word_ids)
 
-        dataset_word = tf.keras.preprocessing.sequence.pad_sequences(
-            [[word2id.get(char, 0) for char in input_str] for input_str in input_s_list], padding='post', maxlen=max_v_len)
+        dataset_word = tf.keras.preprocessing.sequence.pad_sequences(dataset_word, padding='post', maxlen=max_v_len)
         logits, text_lens = model(dataset, dataset_word)
 
         for logit, text_len in zip(logits, text_lens):
@@ -273,11 +297,11 @@ def predict_v2(input_s_list):
     return output_label
 
 
-predict(["1月18日，在印度东北部一座村庄，一头小象和家人走过伐木工人正在清理的区域时被一根圆木难住了。"])
-predict_labels = predict(msra_data.test_sentence_list)
+# predict(["1月18日，在印度东北部一座村庄，一头小象和家人走过伐木工人正在清理的区域时被一根圆木难住了。"])
+predict_labels = predict_v2(msra_data.test_sentence_list)
 true_labels = msra_data.test_tag_list
 
-print(metrix(true_labels, predict_labels))
+print(metrix_v2(true_labels, predict_labels))
 
 """
 crf 层一加，效果比较明显的提高
