@@ -15,7 +15,6 @@ import json
 import pickle
 import numpy as np
 import tensorflow as tf
-from nlp_applications.data_loader import LoaderDuie2Dataset, Document
 
 
 def batch_index(first_list, index_list):
@@ -41,8 +40,10 @@ def build_entity_feature(input_embed, entity_mask, input_size: tf.Tensor):
     #     for v in range(input_size[i]):
     #         entity_feature.append(input_embed[i])
     # entity_feature = tf.cast(entity_feature, dtype=tf.float32)
-    m = tf.cast(tf.expand_dims(entity_mask, -1) == 0, tf.float32) * (-1e1)
-    entity_spans_pool = m + entity_feature
+    # m = tf.cast(tf.expand_dims(entity_mask, -1) == 0, tf.float32) * (-1e1)
+    # entity_spans_pool = m + entity_feature
+    m = tf.expand_dims(entity_mask, -1)
+    entity_spans_pool = m * entity_feature
     entity_spans_pool = tf.reduce_max(entity_spans_pool, axis=1)
 
     return entity_spans_pool
@@ -67,22 +68,11 @@ def build_relation_feature(input_embed, entity_spans_pool, input_relation_entity
 
     relation_entity_feature = tf.map_fn(new_func, input_relation_entity, dtype=tf.float32)
     relation_size_feature = tf.map_fn(new_func2, input_relation_entity, dtype=tf.float32)
-    # relation_entity_feature = tf.cast(relation_entity_feature, dtype=tf.float32)
-    # relation_size_feature = tf.cast(relation_size_feature, dtype=tf.float32)
 
-
-    # relation_count = input_relation_entity.shape[0]
-
-    # for iv in range(relation_count):
-    #     ind = input_relation_entity[iv]
-    #     # relation_embed_feature.append(input_embed[i])
-    #     relation_entity_pair = new_func(entity_spans_pool, ind)
-    #     relation_entity_feature.append(relation_entity_pair)
-    #     relation_size_pair = new_func(size_embeddings, ind)
-    #     relation_size_feature.append(relation_size_pair)
-
-    m = tf.cast(tf.expand_dims(rel_mask, -1) == 0, tf.float32) * (-1e1)
-    relation_spans_pool = m + relation_embed_feature
+    # m = tf.cast(tf.expand_dims(rel_mask, -1) == 0, tf.float32) * (-1e1)
+    # relation_spans_pool = m + relation_embed_feature
+    m = tf.expand_dims(rel_mask, -1)
+    relation_spans_pool = m * relation_embed_feature
     relation_embed = tf.reduce_max(relation_spans_pool, axis=1)
     # relation_entity_featurev = tf.stack(relation_entity_feature)
     # relation_size_featurev = tf.stack(relation_size_feature)
@@ -94,22 +84,22 @@ def build_relation_feature(input_embed, entity_spans_pool, input_relation_entity
 
 class SpERt(tf.keras.models.Model):
 
-    def __init__(self, args, relation_types, entity_types, max_pairs):
+    def __init__(self, args):
         super(SpERt, self).__init__()
 
         self.embed = tf.keras.layers.Embedding(args.char_size, args.embed_size)
         self.size_embed = tf.keras.layers.Embedding(args.size_value, args.size_embed_size)
         # 相比于原始模型，增加双向lstm 层
         self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(args.lstm_size, return_sequences=True))
-        self.rel_classifier = tf.keras.layers.Dense(args.relation_type, activation="softmax")
-        self.entity_classifier = tf.keras.layers.Dense(args.entity_type, activation="softmax")
+        self.rel_classifier = tf.keras.layers.Dense(args.relation_num, activation="softmax")
+        self.entity_classifier = tf.keras.layers.Dense(args.entity_num, activation="softmax")
         self.dropout = tf.keras.layers.Dropout(0.5)
         self.rel_dropout = tf.keras.layers.Dropout(0.5)
 
         # self.cla
-        self._relation_types = relation_types
-        self._entity_types = entity_types
-        self._max_pairs = max_pairs
+        self._relation_types = args.relation_num
+        self._entity_types = args.entity_num
+        self._max_pairs = args.max_pairs
 
     def call(self, text_ids, text_contexts, entity_masks, entity_sizes, entity_nums, relations_entity, rel_masks,  relation_nums,
              training=None, mask=None):
@@ -128,14 +118,14 @@ class SpERt(tf.keras.models.Model):
 
         return entity_clf, rel_clf
 
-    def filter_span(self, input_entity_logits, input_entity_start_end, input_max_len):
+    def filter_span(self, input_entity_logits, input_entity_start_end, input_max_len, entity_couple_set):
         entity_list = tf.argmax(input_entity_logits, axis=-1)
         entity_list = entity_list.numpy()
 
         entity_span_list = []
         for i, ix in enumerate(entity_list):
             # entity_span_list.append(i)
-            if ix != tf.cast(0, dtype=tf.int64):
+            if ix != tf.cast(0, dtype=tf.int32):
                 entity_span_list.append(i)
         # entity_span_list = entity_span_list[:10]
         relations_entity = []
@@ -147,7 +137,7 @@ class SpERt(tf.keras.models.Model):
                 os, oe = input_entity_start_end[j]
                 if i == j:
                     continue
-                if (entity_list[i], entity_list[j]) not in data_loader.entity_couple_set:
+                if (entity_list[i], entity_list[j]) not in entity_couple_set:
                     continue
                 start = se if se > os else oe
                 end = os if se > os else ss
@@ -159,9 +149,9 @@ class SpERt(tf.keras.models.Model):
                 relations_entity.append([i, j])
                 relations_num += 1
 
-        return tf.cast(relations_entity, dtype=tf.int64), tf.cast(relation_masks, dtype=tf.int64), tf.cast([[relations_num]], tf.int64)
+        return tf.cast(relations_entity, dtype=tf.int32), tf.cast(relation_masks, dtype=tf.float32), tf.cast([[relations_num]], tf.int32)
 
-    def predict(self, text_ids, text_contexts, entity_masks, entity_sizes, entity_nums, input_entity_start_end, input_max_len):
+    def predict(self, text_ids, text_contexts, entity_masks, entity_sizes, entity_nums, input_entity_start_end, input_max_len, entity_couple_set):
         h = self.embed(text_ids)
         size_embeddings = self.size_embed(entity_sizes)
         entity_spans_pool = build_entity_feature(h, entity_masks, entity_nums)
@@ -178,7 +168,7 @@ class SpERt(tf.keras.models.Model):
         for e_num in entity_nums_numpy:
 
             rel_res = []
-            relations_entity, relation_mask, relation_nums = self.filter_span(entity_clf[start:e_num[0]], input_entity_start_end[start:e_num[0]], input_max_len)
+            relations_entity, relation_mask, relation_nums = self.filter_span(entity_clf[start:e_num[0]], input_entity_start_end[start:e_num[0]], input_max_len, entity_couple_set)
             if relations_entity.shape[0]:
                 relation_feature = build_relation_feature(h, entity_spans_pool, relations_entity, size_embeddings, relation_mask,
                                                           relation_nums)
@@ -193,141 +183,6 @@ class SpERt(tf.keras.models.Model):
         return batch_res
 
 
-
-spert = SpERt(relation_type, entity_type, 10)
-
-# sample_entity_res, sample_relation_res = spert(sample_encoding, sample_mask, sample_entity_mask, sample_entity_sizes, sample_relation, sample_relation_mask)
-
-
-# print(sample_entity_res.shape)
-# print(sample_relation_res.shape)
-
-sample_entity_label = tf.constant([[1, 2, 3]])
-sample_relation_label = tf.constant(([[1]]))
-
-# loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-optimizer = tf.keras.optimizers.Adam()
-loss_f = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-loss_f2 = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-# print(loss(sample_entity_label, sample_entity_res))
-# print(loss(sample_relation_label, sample_relation_res))
-
-
-@tf.function(experimental_relax_shapes=True)
-def train_step(encodings, context_masks, entity_masks, entity_sizes, entity_num, relation_entity, rel_masks, relation_num, entity_spans, relations):
-
-    with tf.GradientTape() as tape:
-        clf_logits, relation_logits = spert(encodings,
-                          context_masks,
-                          entity_masks,
-                          entity_sizes,
-                          entity_num,
-                          relation_entity,
-                          rel_masks,
-                          relation_num)
-        loss_v1 = loss_f(entity_spans, clf_logits)
-        loss_v2 = loss_f2(relations, relation_logits)
-        loss_v = loss_v1 + loss_v2
-
-    variables = spert.variables
-    gradients = tape.gradient(loss_v, variables)
-    optimizer.apply_gradients(zip(gradients, variables))
-
-    return loss_v
-
-model_path = "D:\\tmp\spert_model\\check"
-
-epoch = 10
-for e in range(epoch):
-    batch_data_iter = get_sample_data(batch_num)
-    for i, batch_data in enumerate(batch_data_iter):
-        lossv = train_step(batch_data["encodings"],
-                           batch_data["context_masks"],
-                           batch_data["entity_masks"],
-                           batch_data["entity_sizes"],
-                           batch_data["entity_num"],
-                           batch_data["relation_entity"],
-                           batch_data["rel_masks"],
-                           batch_data["relation_num"],
-                           batch_data["entity_spans"],
-                           batch_data["relations"])
-
-        if i % 100 == 0:
-            print("epoch {0} batch {1} loss value is {2}".format(e, i, lossv))
-            spert.save_weights(model_path, save_format='tf')
-
-
-test_batch_num = 1
-spert.load_weights(model_path)
-batch_data_iter = get_test_sample_data(test_batch_num)
-submit_res = []
-batch_i = 0
-save_path = "D:\\tmp\submit_data\\duie.json"
-
-
-for i, batch_data in enumerate(batch_data_iter):
-    print("batch {} start".format(i))
-    pres = spert.predict(batch_data["encodings"],
-                               batch_data["context_masks"],
-                               batch_data["entity_masks"],
-                               batch_data["entity_sizes"],
-                               batch_data["entity_num"],
-                               batch_data["entity_start_end"],
-                               batch_data["max_len"])
-    for j in range(test_batch_num):
-        n_pres = pres[j]
-        doc = data_loader.test_documents[i*test_batch_num+j]
-        i_text = doc.raw_text
-        spo_list = []
-        for sop in n_pres:
-            sub_i, sub_j = sop[0]
-            sub_type = sop[1]
-            obj_i, obj_j = sop[2]
-            obj_type = sop[3]
-            pre_type = sop[4]
-
-            if (sub_type, pre_type, obj_type) not in data_loader.triple_set:
-                continue
-            spo_list.append({
-                "predicate": data_loader.id2relation[pre_type],
-                "subject": i_text[sub_i:sub_j],
-                "subject_type": data_loader.id2entity[sub_type],
-                "object": {
-                    "@value": i_text[obj_i:obj_j],
-                },
-                "object_type": {
-                    "@value": data_loader.id2entity[obj_type],
-                }
-            })
-
-        single_spo = {
-            "text": i_text,
-            "spo_list": spo_list
-        }
-        print(single_spo)
-    #     submit_res.append(json.dumps(single_spo))
-    #
-    # with open(save_path, "a+") as f:
-    #     f.write("\n".join(submit_res))
-    submit_res = []
-
-# save_batch_num = 1000
-
-# with open(save_path, "w") as f:
-#     f.write("\n".join(submit_res[:save_batch_num]))
-#
-# batch_count = int(len(submit_res)//save_batch_num) + 1
-# print(batch_count)
-#
-# for ib in range(1, batch_count):
-#     ib_start = ib*save_batch_num
-#     ib_end = ib*save_batch_num + save_batch_num
-#     if len(submit_res[ib_start:ib_end]) == 0:
-#         break
-#     with open(save_path, "a+") as f:
-#         f.write("\n")
-#         f.write("\n".join(submit_res[ib_start:ib_end]))
-
-
-
-
+def test_run_model():
+    sample_entity_label = tf.constant([[1, 2, 3]])
+    sample_relation_label = tf.constant(([[1]]))
