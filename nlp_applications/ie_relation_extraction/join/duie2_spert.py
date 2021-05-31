@@ -179,7 +179,7 @@ class DataIter(BaseDataIterator):
         for rl in relation_list:
             sub = rl.sub
             obj = rl.obj
-            entity_relation_value.append((sub.id, sub.start, sub.end - 1, obj.id, obj.start, obj.end - 1, rl.id))
+            entity_relation_value.append((sub.id, sub.start, sub.end, obj.id, obj.start, obj.end, rl.id))
 
         for j in range(text_len - 1):
             for k in range(j + 1, text_len):
@@ -391,7 +391,15 @@ def evaluation(input_batch_data, input_model):
     predict_count = 0.0
     for ib in range(i_batch_num):
         print(pres[ib])
-        print(input_batch_data["entity_relation_value"][ib])
+        predict_count += len(pres[ib])
+        real_count += len(input_batch_data["entity_relation_value"][ib])
+
+        real_data_set = set(input_batch_data["entity_relation_value"][ib])
+
+        for sub_loc, sub_type, obj_loc, obj_type, pre_type in pres[ib]:
+            one = (sub_type, sub_loc[0], sub_loc[1], obj_type, obj_loc[0], obj_loc[1], pre_type)
+            if one in real_data_set:
+                hit_num += 1
 
     res = {
         "hit_num": hit_num,
@@ -410,6 +418,7 @@ size_embed_size = 64
 relation_type = len(data_loader.relation2id)
 entity_type = len(data_loader.entity2id)
 
+import os
 
 def main():
     parser = argparse.ArgumentParser()
@@ -453,8 +462,10 @@ def main():
         return loss_v
 
     model_path = "D:\\tmp\spert_model\\check"
+    if os.path.exists(model_path):
+        spert.load_weights(model_path)
     data_iter = DataIter(data_loader)
-    epoch = 50
+    epoch = 2
     for e in range(epoch):
         batch_data_iter = data_iter.train_iter(batch_num)
         for i, batch_data in enumerate(batch_data_iter):
@@ -476,7 +487,7 @@ def main():
 
 
     test_batch_num = 1
-    # spert.load_weights(model_path)
+    spert.load_weights(model_path)
     evaluation_res = {
         "hit_num": 0,
         "real_count": 0,

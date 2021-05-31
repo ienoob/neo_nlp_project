@@ -153,10 +153,12 @@ class SpERt(tf.keras.models.Model):
 
     def predict(self, text_ids, text_contexts, entity_masks, entity_sizes, entity_nums, input_entity_start_end, input_max_len, entity_couple_set):
         h = self.embed(text_ids)
+        h = self.bi_lstm(h)
+
         size_embeddings = self.size_embed(entity_sizes)
         entity_spans_pool = build_entity_feature(h, entity_masks, entity_nums)
         entity_repr = tf.concat([entity_spans_pool, size_embeddings], axis=1)
-        entity_repr = self.dropout(entity_repr)
+        # entity_repr = self.dropout(entity_repr)
         entity_clf = self.entity_classifier(entity_repr)
 
         entity_list = tf.argmax(entity_clf, axis=-1)
@@ -176,7 +178,8 @@ class SpERt(tf.keras.models.Model):
                 rel_clf_argmax = tf.argmax(rel_clf, axis=-1)
 
                 rel_res = [(relations_entity[i].numpy()[0], relations_entity[i].numpy()[1], label) for i, label in enumerate(rel_clf_argmax.numpy())]
-                rel_res = [(input_entity_start_end[si], entity_list[si], input_entity_start_end[oi], entity_list[oi], p) for si, oi, p in rel_res if p]
+
+                rel_res = [(input_entity_start_end[si][0],  entity_list[si], input_entity_start_end[oi], entity_list[oi], p) for si, oi, p in rel_res if p]
 
             batch_res.append(rel_res)
             start = e_num[0]
