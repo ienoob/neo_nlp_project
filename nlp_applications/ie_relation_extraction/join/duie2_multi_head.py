@@ -16,6 +16,7 @@ from nlp_applications.ie_relation_extraction.join.multi_head import MultiHeaderM
 
 data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取\\"
 data_loader = LoaderDuie2Dataset(data_path)
+triple_regularity = data_loader.triple_set
 entity_bio_encoder = {"O": 0}
 
 for i in range(1, len(data_loader.entity2id)):
@@ -76,7 +77,8 @@ class DataIter(BaseDataIterator):
             "word_encode_id": word_encode_id,
             "entity_label_data": entity_label_data,
             "rel_label_data": rel_label_data,
-            "entity_relation_value": entity_relation_value
+            "entity_relation_value": entity_relation_value,
+            "text_raw": text_raw
         }
 
     def padding_batch_data(self, input_batch_data):
@@ -85,9 +87,11 @@ class DataIter(BaseDataIterator):
         batch_entity_label = []
         batch_rel_label = []
         batch_entity_relation_value = []
+        batch_text_raw = []
 
         max_len = 0
         for data in input_batch_data:
+            batch_text_raw.append(data["text_raw"])
             batch_char_encode_id.append(data["char_encode_id"])
             batch_word_encode_id.append(data["word_encode_id"])
             batch_entity_label.append(data["entity_label_data"])
@@ -110,7 +114,8 @@ class DataIter(BaseDataIterator):
             "entity_label_data": batch_entity_label,
             "rel_label_data": tf.cast(batch_rel_label, dtype=tf.int32),
             "max_len": tf.cast(max_len, dtype=tf.int32),
-            "entity_relation_value": batch_entity_relation_value
+            "entity_relation_value": batch_entity_relation_value,
+            "text_raw": batch_text_raw
         }
 
     def dev_iter(self, input_batch_num):
@@ -124,6 +129,35 @@ class DataIter(BaseDataIterator):
             yield self.padding_batch_data(c_batch_data)
 
 
+def assert_eval(input_entity_id, input_rel_id, input_entity_relation_value, input_text_raw):
+    i_batch_num = input_entity_id.shape[0]
+    for ib in range(i_batch_num):
+        print(input_text_raw[ib])
+        entity_id = [entity_bio_id2encoder[e] for e in input_entity_id[ib]]
+        entity_e_list = extract_entity(entity_id)
+        print(entity_e_list)
+        entity_map = {e_value[1] - 1: e_value for e_value in entity_e_list}
+        print(entity_map)
+
+        rel_metric = input_rel_id[ib].numpy()
+        rel_list = []
+        for iv, o_rel_id_row in enumerate(rel_metric):
+            if iv not in entity_map:
+                continue
+            sub_iv = entity_map[iv]
+            for jv, o_rel in enumerate(o_rel_id_row):
+                if o_rel == 0:
+                    continue
+                if iv == jv:
+                    continue
+                if jv not in entity_map:
+                    continue
+                obj_jv = entity_map[jv]
+                one = (int(sub_iv[2]), sub_iv[0], sub_iv[1]-1,  int(obj_jv[2]), obj_jv[0], obj_jv[1]-1, o_rel)
+                rel_list.append(one)
+        print(rel_list)
+
+        print(input_entity_relation_value[ib])
 
 def evaluation(input_char_id, input_word_id, input_entity_relation_value, input_model):
     o_entity_logits, o_rel_logits, _ = input_model(input_char_id, input_word_id)
@@ -137,8 +171,9 @@ def evaluation(input_char_id, input_word_id, input_entity_relation_value, input_
     for ib in range(i_batch_num):
         entity_id = [entity_bio_id2encoder[e] for e in o_entity_id[ib].numpy()]
         entity_e_list = extract_entity(entity_id)
+        print("entity_num {}".format(len(entity_e_list)))
 
-        entity_map = {e_value[1]: e_value for e_value in entity_e_list}
+        entity_map = {e_value[1]-1: e_value for e_value in entity_e_list}
         # print("entity", entity_e_list)
         # entity_e_list = [ for s, e, si in entity_e_list]
         o_rel_id = o_rel_ids[ib].numpy()
@@ -158,7 +193,9 @@ def evaluation(input_char_id, input_word_id, input_entity_relation_value, input_
                 if jv not in entity_map:
                     continue
                 obj_jv = entity_map[jv]
-                one = (int(sub_iv[2]), sub_iv[0], sub_iv[1],  int(obj_jv[2]), obj_jv[0], obj_jv[1], o_rel)
+                if (int(sub_iv[2]), o_rel, int(obj_jv[2])) not in triple_regularity:
+                    continue
+                one = (int(sub_iv[2]), sub_iv[0], sub_iv[1]-1,  int(obj_jv[2]), obj_jv[0], obj_jv[1]-1, o_rel)
                 rel_list.append(one)
                 predict_count += 1
                 if one in real_data_set:
@@ -177,6 +214,15 @@ def evaluation(input_char_id, input_word_id, input_entity_relation_value, input_
 def main():
     # test_run_model()
     model = MultiHeaderModel(char_size, char_embed, word_size, entity_num, entity_embed_size, rel_num, rel_embed_size)
+
+    def loss_func1(input_y, logits):
+        cross_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        mask = tf.math.logical_not(tf.math.equal(input_y, 0))
+
+        mask = tf.cast(mask, dtype=tf.int64)
+        lossv = cross_func(input_y, logits, sample_weight=mask)
+
+        return lossv
     loss_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
     optimizer = tf.keras.optimizers.Adam()
 
@@ -185,7 +231,7 @@ def main():
         with tf.GradientTape() as tape:
             o_entity_logits, o_rel_logits, entity_label_mask = model(input_char_id, input_word_id, input_entity_id, data_max_len,
                                                   training=True)
-            loss_v = loss_func(input_entity_id, o_entity_logits, sample_weight=entity_label_mask) + loss_func(input_rel_id, o_rel_logits)
+            loss_v = loss_func(input_entity_id, o_entity_logits, sample_weight=entity_label_mask) + loss_func1(input_rel_id, o_rel_logits)
 
             variables = model.variables
             gradients = tape.gradient(loss_v, variables)
@@ -194,7 +240,7 @@ def main():
         return loss_v
 
     data_iter = DataIter(data_loader)
-    epoch = 10
+    epoch = 20
     for ep in range(epoch):
         for batch_i, batch_data in enumerate(data_iter.train_iter(batch_num)):
 
@@ -207,6 +253,9 @@ def main():
                 print("epoch {0} batch {1} loss value {2}".format(ep, batch_i, loss_value))
                 print(evaluation(batch_data["char_encode_id"],
                                  batch_data["word_encode_id"], batch_data["entity_relation_value"], model))
+                # assert_eval(batch_data["entity_label_data"], batch_data["rel_label_data"],
+                #               batch_data["entity_relation_value"],
+                #               batch_data["text_raw"])
 
     dev_bt_num = 10
     evaluation_res = {
@@ -219,6 +268,11 @@ def main():
         evaluation_res["hit_num"] += sub_eval_res["hit_num"]
         evaluation_res["real_count"] += sub_eval_res["real_count"]
         evaluation_res["predict_count"] += sub_eval_res["predict_count"]
+
+    evaluation_res["recall"] = (evaluation_res["hit_num"] + 1e-8) / (evaluation_res["real_count"] + 1e-3)
+    evaluation_res["precision"] = (evaluation_res["hit_num"] + 1e-8) / (evaluation_res["predict_count"] + 1e-3)
+
+    evaluation_res["f1_value"] = 2 * evaluation_res["recall"] * evaluation_res["precision"] / (evaluation_res["recall"] + evaluation_res["precision"])
 
     print(evaluation_res)
 

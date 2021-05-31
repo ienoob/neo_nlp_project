@@ -12,7 +12,8 @@ bio 序列标注模型
 4) seq2seq + attention + crf  
 5) transformer + crf  
 6) bert + crf  
-7) pointer_network  
+7) pointer_network 
+8) GlobalPointer
 
 msr data
 
