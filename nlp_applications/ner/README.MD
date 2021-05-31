@@ -12,8 +12,9 @@ bio 序列标注模型
 4) seq2seq + attention + crf  
 5) transformer + crf  
 6) bert + crf  
-7) pointer_network 
-8) GlobalPointer
+7) pointer_network  
+8) globalPointer[4]
+9) mrc model [5]
 
 msr data
 
@@ -33,6 +34,8 @@ msr data
 1) https://zhuanlan.zhihu.com/p/166496466   
 2) https://zhuanlan.zhihu.com/p/181732910
 3) https://zhuanlan.zhihu.com/p/350669317
+4) https://spaces.ac.cn/archives/8373
+5) A Unified MRC Framework for Named Entity Recognition
 
 
 

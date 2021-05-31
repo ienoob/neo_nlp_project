@@ -14,6 +14,7 @@ from nlp_applications.ner.evaluation import metrix
 msra_data = LoadMsraDataV2("D:\data\\ner\\msra_ner_token_level\\")
 bert_model_name = "bert-base-chinese"
 class_num = len(msra_data.label2id)
+lstm_dim = 64
 
 
 class DataIterator(object):
@@ -93,10 +94,39 @@ class BertCrfModel(tf.keras.Model):
             return out_tags, text_lens
 
 
-bert_crf_model = BertCrfModel(bert_model_name)
+class BertCrfModelV2(tf.keras.Model):
+
+    def __init__(self, inner_bert_model_name):
+        super(BertCrfModelV2, self).__init__()
+        # config = BertConfig.from_pretrained(inner_bert_model_name, cache_dir=None)
+        self.bert_model = TFBertModel.from_pretrained(inner_bert_model_name)
+        self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_dim, return_sequences=True))
+        # self.bert_model = TFBertModel(config)
+        self.transition_params = tf.Variable(tf.random.uniform(shape=(class_num, class_num)))
+        self.out = tf.keras.layers.Dense(class_num, activation="softmax")
+
+    def call(self, inputs, training=None, mask=None, labels=None):
+        # seg_id = tf.zeros(mask.shape)
+        mask = tf.math.logical_not(tf.math.equal(inputs, 0))
+        text_lens = tf.math.reduce_sum(tf.cast(tf.math.not_equal(inputs, 0), dtype=tf.int32), axis=-1)
+        outputs = self.bert_model(inputs, attention_mask=mask)
+        outputs = outputs[0]
+        inputs = self.bi_lstm(outputs, mask=mask)
+        out_tags = self.out(inputs)
+
+        if labels is not None:
+            label_sequences = tf.convert_to_tensor(labels, dtype=tf.int32)
+            log_likelihood, self.transition_params = crf_log_likelihood(out_tags, label_sequences, text_lens, self.transition_params)
+
+            return out_tags, text_lens, log_likelihood
+        else:
+            return out_tags, text_lens
 
 
-optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+bert_crf_model = BertCrfModelV2(bert_model_name)
+
+
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
 
 def loss_func(input_y, logits):
@@ -108,12 +138,28 @@ def loss_func(input_y, logits):
 
     return lossv
 
+def get_acc_one_step(logits, text_lens, labels_batch):
+    paths = []
+    accuracy = 0
+    for logit, text_len, labels in zip(logits, text_lens, labels_batch):
+        viterbi_path, _ = viterbi_decode(logit[:text_len], bert_crf_model.transition_params)
+        paths.append(viterbi_path)
+        correct_prediction = tf.equal(
+            tf.convert_to_tensor(tf.keras.preprocessing.sequence.pad_sequences([viterbi_path], padding='post'),
+                                 dtype=tf.int32),
+            tf.convert_to_tensor(tf.keras.preprocessing.sequence.pad_sequences([labels[:text_len]], padding='post'),
+                                 dtype=tf.int32)
+        )
+        accuracy = accuracy + tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+        # print(tf.reduce_mean(tf.cast(correct_prediction, tf.float32)))
+    accuracy = accuracy / len(paths)
+    return accuracy
 
 @tf.function()
 def train_step(input_xx, input_yy, input_mask):
 
     with tf.GradientTape() as tape:
-        logits, _, log_likelihood = bert_crf_model(input_xx, True, input_mask, input_yy)
+        logits, text_len, log_likelihood = bert_crf_model(input_xx, True, input_mask, input_yy)
         loss_v1 = -tf.reduce_mean(log_likelihood)
         loss_v2 = loss_func(input_yy, logits)
         loss_v = loss_v1 + loss_v2
@@ -122,7 +168,7 @@ def train_step(input_xx, input_yy, input_mask):
     gradients = tape.gradient(loss_v, variables)
     optimizer.apply_gradients(zip(gradients, variables))
 
-    return loss_v
+    return loss_v, logits, text_len
 
 batch_num = 10
 bert_crf_model_path = "D:\\tmp\\bert_crf"
@@ -140,16 +186,18 @@ epoch = 5
 for ep in range(epoch):
 
     for batch_i, batch in enumerate(data_iterator):
-        loss = train_step(batch["sentence_id"], batch["label_id"], batch["sentence_mask"])
+        loss, logits, text_lens = train_step(batch["sentence_id"], batch["label_id"], batch["sentence_mask"])
 
         if batch_i % 100 == 0:
-            print("epoch {0} batch {1} loss is {2}".format(ep, batch_i, loss))
+            accuracy = get_acc_one_step(logits, text_lens, batch["label_id"])
+            print("epoch {0} batch {1} loss is {2}, accuracy {3}".format(ep, batch_i, loss, accuracy))
             ckpt_manager.save()
             # bert_crf_model.save_weights(bert_crf_model_path, save_format='tf')
 
 
 ckpt = tf.train.Checkpoint(optimizer=optimizer,model=bert_crf_model)
 ckpt.restore(tf.train.latest_checkpoint(bert_crf_model_path))
+
 
 def predict(input_s_list):
     # max_v_len = max([len(input_s) for input_s in input_s_list])
