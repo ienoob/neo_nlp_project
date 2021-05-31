@@ -1085,3 +1085,17 @@ class BaseDataIterator(object):
                 c_batch_data = []
         if c_batch_data:
             yield self.padding_batch_data(c_batch_data)
+
+    def data_iter(self, input_batch_num, train=None):
+        if train:
+            doc_list = self.data_loader.documents
+        else:
+            doc_list = self.data_loader.test_documents
+        c_batch_data = []
+        for doc in doc_list:
+            c_batch_data.append(self.single_doc_processor(doc))
+            if len(c_batch_data) == input_batch_num:
+                yield self.padding_batch_data(c_batch_data)
+                c_batch_data = []
+        if c_batch_data:
+            yield self.padding_batch_data(c_batch_data)
