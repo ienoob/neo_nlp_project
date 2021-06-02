@@ -37,6 +37,7 @@ msr data
 3) https://zhuanlan.zhihu.com/p/350669317
 4) https://spaces.ac.cn/archives/8373
 5) A Unified MRC Framework for Named Entity Recognition
-
+6) FLAT: Chinese NER Using Flat-Lattice Transformer
+7) Lex-BERT: Enhancing BERT based NER with lexicons
 
 
