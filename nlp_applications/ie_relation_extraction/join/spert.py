@@ -179,7 +179,7 @@ class SpERt(tf.keras.models.Model):
 
                 rel_res = [(relations_entity[i].numpy()[0], relations_entity[i].numpy()[1], label) for i, label in enumerate(rel_clf_argmax.numpy())]
 
-                rel_res = [(input_entity_start_end[si][0],  entity_list[si], input_entity_start_end[oi], entity_list[oi], p) for si, oi, p in rel_res if p]
+                rel_res = [(input_entity_start_end[si],  entity_list[si], input_entity_start_end[oi], entity_list[oi], p) for si, oi, p in rel_res if p]
 
             batch_res.append(rel_res)
             start = e_num[0]

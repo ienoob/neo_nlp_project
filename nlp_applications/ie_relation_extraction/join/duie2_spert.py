@@ -465,25 +465,25 @@ def main():
     if os.path.exists(model_path):
         spert.load_weights(model_path)
     data_iter = DataIter(data_loader)
-    epoch = 2
-    for e in range(epoch):
-        batch_data_iter = data_iter.train_iter(batch_num)
-        for i, batch_data in enumerate(batch_data_iter):
-            lossv = train_step(batch_data["encodings"],
-                               batch_data["context_masks"],
-                               batch_data["entity_masks"],
-                               batch_data["entity_sizes"],
-                               batch_data["entity_num"],
-                               batch_data["relation_entity"],
-                               batch_data["rel_masks"],
-                               batch_data["relation_num"],
-                               batch_data["entity_spans"],
-                               batch_data["relations"])
-
-            if i % 100 == 0:
-                # evaluation(batch_data, spert)
-                print("epoch {0} batch {1} loss value is {2}".format(e, i, lossv))
-                spert.save_weights(model_path, save_format='tf')
+    # epoch = 2
+    # for e in range(epoch):
+    #     batch_data_iter = data_iter.train_iter(batch_num)
+    #     for i, batch_data in enumerate(batch_data_iter):
+    #         lossv = train_step(batch_data["encodings"],
+    #                            batch_data["context_masks"],
+    #                            batch_data["entity_masks"],
+    #                            batch_data["entity_sizes"],
+    #                            batch_data["entity_num"],
+    #                            batch_data["relation_entity"],
+    #                            batch_data["rel_masks"],
+    #                            batch_data["relation_num"],
+    #                            batch_data["entity_spans"],
+    #                            batch_data["relations"])
+    #
+    #         if i % 100 == 0:
+    #             # evaluation(batch_data, spert)
+    #             print("epoch {0} batch {1} loss value is {2}".format(e, i, lossv))
+    #             spert.save_weights(model_path, save_format='tf')
 
 
     test_batch_num = 1
@@ -499,6 +499,8 @@ def main():
         evaluation_res["hit_num"] += sub_eval_res["hit_num"]
         evaluation_res["real_count"] += sub_eval_res["real_count"]
         evaluation_res["predict_count"] += sub_eval_res["predict_count"]
+
+        print(evaluation_res)
 
     print(evaluation_res)
     # submit_res = []
@@ -550,6 +552,12 @@ def main():
         #
         # with open(save_path, "a+") as f:
         #     f.write("\n".join(submit_res))
+"""
+    log: 
+    0.3721, 0.0322, 0.0592  2021-6-2
+"""
+from nlp_applications.ner.evaluation import eval_metrix
 
 if __name__ == "__main__":
-    main()
+    # main()
+    print(eval_metrix(14076, 37825, 437370))
