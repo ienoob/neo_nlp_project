@@ -97,6 +97,8 @@ def evaluation(input_sentence_list, input_y, input_model: PointerNetworkModel):
             for j, start_v in enumerate(start_row):
                 if j < t_iv:
                     continue
+                if start_v == 0:
+                    continue
                 for k, end_v in enumerate(end_logits_argmax[i]):
                     if k < j:
                         continue
@@ -110,9 +112,11 @@ def evaluation(input_sentence_list, input_y, input_model: PointerNetworkModel):
     predict_num = 0.0
     true_num = 0.0
     for i, predict_row in enumerate(predict_res):
-        true_set = set(extract_entity(input_y[i]))
+        true_set = set([(si, ei, tag2id[e]) for si, ei, e in extract_entity(input_y[i])])
         predict_num += len(predict_row)
         true_num += len(true_set)
+        print(predict_row)
+        print(true_set)
         for p in predict_row:
             if p in true_set:
                 hit_num += 1
@@ -149,16 +153,16 @@ def main():
     # if not os.path.exists(model_data_path):
     #     os.mkdir(model_data_path)
     model.load_weights(model_data_path)
-    epoch = 10
-    for ep in range(epoch):
-
-        for batch, (train_x, train_start_y, train_end_y) in enumerate(dataset.take(-1)):
-            loss_value = train_step(train_x, train_start_y, train_end_y)
-
-            if batch % 100 == 0:
-                print("epoch {0} batch {1} loss is {2}".format(ep, batch, loss_value))
-                # rnn.save(rnn_data_path)
-                model.save_weights(model_data_path, save_format='tf')
+    # epoch = 10
+    # for ep in range(epoch):
+    #
+    #     for batch, (train_x, train_start_y, train_end_y) in enumerate(dataset.take(-1)):
+    #         loss_value = train_step(train_x, train_start_y, train_end_y)
+    #
+    #         if batch % 100 == 0:
+    #             print("epoch {0} batch {1} loss is {2}".format(ep, batch, loss_value))
+    #             # rnn.save(rnn_data_path)
+    #             model.save_weights(model_data_path, save_format='tf')
     evaluation(msra_data.test_sentence_list, msra_data.test_tag_list, model)
 
 

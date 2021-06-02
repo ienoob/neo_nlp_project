@@ -25,6 +25,7 @@ msr data
 | bi-lstm | 0.6139 | 0.7107 |    0    |
 | bi-lstm+crf | 0.6960 | 0.8118 |  0  |
 | bi-lstm+crf+word | 0.7643 | 0.8052 |  0.7842 |
+| pointer_net | 0.5948 | 0.8287 |  0.6926 | 
 
 ## 相关提高方法
 1) word-level feature
