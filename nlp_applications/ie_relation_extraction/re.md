@@ -14,6 +14,7 @@
 3）multi_head  
 4）pointer net  
 5）tplink  
+6）novel_tagging [5]
 
 数据集 DuIE2.0 
 
@@ -21,7 +22,7 @@
 | --- | ------ | --------- | -------- |  
 | 基于规则方法 | 0 | 0 | 0 |
 | spert | 0 | 0 | 0 |
-| multi_head | 0 | 0 | 0 |
+| multi_head | 0.3919 | 0.2373 | 0.2956 |
 
 
 # 相关文章
@@ -29,3 +30,4 @@
 [2] Joint entity recognition and relation extraction as a multi-head selection problem
 [3] Joint Extraction of Entities and Relations Based on a Novel Decomposition Strategy 
 [4] Single-stage Joint Extraction of Entities and Relations Through Token Pair Linking
+[5] Joint Extraction of Entities and Relations Based on a Novel Tagging Scheme
