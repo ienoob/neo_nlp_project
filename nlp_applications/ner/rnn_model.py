@@ -117,7 +117,7 @@ rnn_data_path = "D:\\tmp\\neo_nlp\\rnn_ner"
 if os.path.exists(rnn_data_path):
     rnn.load_weights(rnn_data_path)
 # else:
-epoch = 10
+epoch = 1
 for ep in range(epoch):
 
     for batch, (trainv, labelv) in enumerate(dataset.take(-1)):
