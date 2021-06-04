@@ -34,6 +34,7 @@ class DataIterator(object):
         sub_span = [0]*len(encoding)
         sub_label = np.zeros((2, len(encoding)))
         po_label = np.zeros((2*predicate_num, len(encoding)))
+        evaluation_label = []
         for relation in doc.relation_list:
             sub_span[relation.sub.start] = 1
             sub_label[0][relation.sub.start] = 1
@@ -46,11 +47,17 @@ class DataIterator(object):
             po_label[pre_type*2][obj_start] = 1
             po_label[pre_type*2+1][obj_end] = 1
 
+            sub = relation.sub
+            obj = relation.obj
+
+            evaluation_label.append((sub.id, sub.start, sub.end-1, obj.id, obj.start, obj.end-1, relation.id))
+
         return {"encoding": encoding,
                 "encoding_mask": encoding_mask,
                 "sub_span": sub_span,
                 "sub_label": sub_label,
-                "po_label": po_label}
+                "po_label": po_label,
+                "entity_relation_value": evaluation_label}
 
     def single_test_doc_processor(self, doc: Document):
         encoding = doc.text_id
@@ -58,7 +65,8 @@ class DataIterator(object):
         encoding_mask = [1]*len(encoding)
 
         return {"encoding": encoding,
-                "encoding_mask": encoding_mask,}
+                "encoding_mask": encoding_mask,
+                }
 
     def padding_batch_data(self, input_batch_data):
         batch_encoding = []
@@ -66,11 +74,13 @@ class DataIterator(object):
         batch_sub_span = []
         batch_sub_label = []
         batch_po_label = []
+        batch_entity_relation_value = []
         max_len = 0
         for data in input_batch_data:
             batch_encoding.append(data["encoding"])
             batch_encoding_mask.append(data["encoding_mask"])
             batch_sub_span.append(data["sub_span"])
+            batch_entity_relation_value.append(data["entity_relation_value"])
 
             max_len = max(len(data["encoding"]), max_len)
 
@@ -87,7 +97,8 @@ class DataIterator(object):
             "encoding_mask": tf.keras.preprocessing.sequence.pad_sequences(batch_encoding_mask, padding="post"),
             "sub_span": tf.keras.preprocessing.sequence.pad_sequences(batch_sub_span, padding="post", dtype="float32"),
             "sub_label": tf.cast(batch_sub_label, dtype=tf.int64),
-            "po_label": tf.cast(batch_po_label, dtype=tf.int64)}
+            "po_label": tf.cast(batch_po_label, dtype=tf.int64),
+            "entity_relation_value": batch_entity_relation_value}
 
     def padding_test_batch_data(self, input_batch_data):
         batch_encoding = []
@@ -143,13 +154,42 @@ def evaluation(data_iter, input_model):
         out_po_value = tf.map_fn(lambda x: 1 if x > 0.5 else 0, out_po_preds).numpy()
         mask_numpy = mask.numpy()
 
-        batch_num = out_sub_preds.shape[0]
+        # batch_num = out_sub_preds.shape[0]
         for b, s_pred in enumerate(out_sub_value):
-            p_pred = out_po_value[b]
+            po_pred = out_po_value[b]
 
+            entity_list = []
             for j, sv in enumerate(s_pred[0]):
+                if sv == 0:
+                    continue
                 for k, pv in enumerate(s_pred[1]):
-                    pass
+                    if k < j:
+                        continue
+                    if pv == 1:
+                        pass
+                    entity_list.append((j, k))
+            po_list = []
+            for mi in range(predicate_num):
+                po_s_array = po_pred[mi*2]
+                po_e_array = po_pred[mi*2+1]
+
+                for mj, pvs in enumerate(po_s_array):
+                    if pvs == 0:
+                        continue
+                    for mk, pve in enumerate(po_e_array):
+                        if mk < mj:
+                            continue
+                        if pve == 1:
+                            pass
+                        po_list.append((mj, mk, mi))
+
+            sub_pre_list = [(ei, ej, pi, pj, pt) for ei, ej in entity_list for pi, pj, pt in po_list]
+            predict_res.append(sub_pre_list)
+
+
+
+
+
 
 
 
@@ -169,23 +209,33 @@ def main():
     optimizer = tf.keras.optimizers.Adam(lr_schedule)
 
 
-    def loss_func(input_y, logits, input_mask):
-        loss_fun = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-        # mask = math_ops.not_equal(input_mask, 0)
-        # loss_va = loss_fun(input_y, logits)
+    # def loss_func(input_y, logits, input_mask):
+    #     loss_fun = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+    #     # mask = math_ops.not_equal(input_mask, 0)
+    #     # loss_va = loss_fun(input_y, logits)
+    #
+    #     loss_va = loss_fun(input_y, logits, sample_weight=input_mask)
+    #     # loss_va = tf.keras.losses.mse(input_y, logits)
+    #
+    #     return tf.reduce_mean(loss_va)
 
-        loss_va = loss_fun(input_y, logits, sample_weight=input_mask)
-        # loss_va = tf.keras.losses.mse(input_y, logits)
-
-        return tf.reduce_mean(loss_va)
+    loss_func = tf.keras.losses.BinaryCrossentropy(from_logits=True)
 
 
     @tf.function(experimental_relax_shapes=True)
     def train_step(input_x, input_sub_span, input_sub_label, input_po_label):
         with tf.GradientTape() as tape:
             sub_logits, po_logits, data_mask = pm_model(input_x, input_sub_span)
-            sub_data_mask = tf.repeat()
-            lossv = loss_func(input_sub_label, sub_logits, data_mask) + loss_func(input_po_label, po_logits, data_mask)
+            data_mask = tf.expand_dims(data_mask, 1)
+            sub_data_mask = tf.repeat(data_mask, 2, axis=1)
+            po_data_mask = tf.repeat(data_mask, 2*predicate_num, axis=1)
+            # print(data_mask)
+            # print(sub_data_mask.shape, sub_logits.shape)
+            # print(po_data_mask.shape, po_logits.shape)
+            # sub_logits = sub_logits * tf.cast(sub_data_mask, dtype=tf.float32)
+            # po_logits = po_logits * tf.cast(po_data_mask, dtype=tf.float32)
+            lossv = tf.keras.losses.MSE(input_sub_label, sub_logits) + tf.keras.losses.MSE(input_po_label, po_logits)
+            print(lossv)
         variables = pm_model.variables
         gradients = tape.gradient(lossv, variables)
         optimizer.apply_gradients(zip(gradients, variables))
@@ -203,20 +253,22 @@ def main():
                 print("epoch {0} batch {1} loss value is {2}".format(ep, batch_i, loss_value))
                 # pm_model.save_weights(model_path, save_format='tf')
 
-
     test_batch_num = 1
-    # pm_model.load_weights(model_path)
     batch_data_iter = data_iter.dev_iter(test_batch_num)
-    submit_res = []
-    batch_i = 0
-    save_path = "D:\\tmp\submit_data\\duie.json"
-    for i, batch_data in enumerate(batch_data_iter):
-        print("batch {} start".format(i))
-        out_sub_preds, out_po_preds = pm_model.predict(batch_data["encoding"])
-
-        print(out_sub_preds, out_po_preds)
-
-        break
+    evaluation(batch_data_iter, pm_model)
+    # test_batch_num = 1
+    # # pm_model.load_weights(model_path)
+    # batch_data_iter = data_iter.dev_iter(test_batch_num)
+    # submit_res = []
+    # batch_i = 0
+    # save_path = "D:\\tmp\submit_data\\duie.json"
+    # for i, batch_data in enumerate(batch_data_iter):
+    #     print("batch {} start".format(i))
+    #     out_sub_preds, out_po_preds = pm_model.predict(batch_data["encoding"])
+    #
+    #     print(out_sub_preds, out_po_preds)
+    #
+    #     break
 
 
 if __name__ == "__main__":
