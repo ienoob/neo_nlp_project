@@ -35,7 +35,7 @@ class Tplink(tf.keras.Model):
         self.t_t_uv = tf.keras.layers.Dense(char_embed_size)
         self.t2t_relation = tf.keras.layers.Dense(relation_num, activation="softmax")
 
-    def call(self, inputs, input_words, input_max_len, training=None, mask=None):
+    def call(self, inputs, input_words, input_entity_label, input_max_len, training=None, mask=None):
         mask_value = tf.math.logical_not(tf.math.equal(inputs, 0))
         char_embed = self.embed(inputs)
         word_embed = self.word_embed(input_words)
@@ -56,11 +56,19 @@ class Tplink(tf.keras.Model):
 
         eh_logits = self.entity_classifier(eh_uv)
 
+        if not training:
+            input_entity_value = tf.cast(tf.math.greater_equal(eh_logits, 0.5), dtype=tf.float32)
+        else:
+            input_entity_value = tf.cast(tf.expand_dims(input_entity_label, axis=-1), dtype=tf.float32)
+
+        relation_uv = eh_uv * input_entity_value
+
         hh_u = tf.expand_dims(self.h_h_u(lstm_encoder), axis=1)
         hh_u = tf.keras.activations.relu(tf.tile(hh_u, multiples=(1, L, 1, 1)))
         hh_v = tf.expand_dims(self.h_h_v(lstm_encoder), axis=2)
         hh_v = tf.keras.activations.relu(tf.tile(hh_v, multiples=(1, 1, L, 1)))
         hh_uv = self.h_h_uv(tf.concat((hh_u, hh_v), axis=-1))
+        hh_uv = tf.concat((relation_uv, hh_uv), axis=-1)
 
         hh_logtis = self.h2h_relation(hh_uv)
 
@@ -69,6 +77,7 @@ class Tplink(tf.keras.Model):
         tt_v = tf.expand_dims(self.t_t_v(lstm_encoder), axis=2)
         tt_v = tf.keras.activations.relu(tf.tile(tt_v, multiples=(1, 1, L, 1)))
         tt_uv = self.t_t_uv(tf.concat((tt_u, tt_v), axis=-1))
+        tt_uv = tf.concat((relation_uv, tt_uv), axis=-1)
 
         tt_logtis = self.t2t_relation(tt_uv)
 
