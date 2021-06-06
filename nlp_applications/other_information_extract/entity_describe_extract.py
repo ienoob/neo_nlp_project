@@ -159,7 +159,7 @@ def multi_process(processes_num=4):
 
 def test_extract_performance():
     ede_model = EntityDescribeExtractByRoleAnalysis()
-    start_a_time = time.time()
+
 
     sentence_list = ["数学是利用符号语言研究数量、结构、变化以及空间等概念的一门学科，从某种角度看属于形式科学的一种。",
                      "AnyShare由上海爱数信息技术股份有限公司自主研发的一款软硬件一体化产品，主要面向企业级用户，提供非结构化数据管理方案。",
@@ -171,14 +171,20 @@ def test_extract_performance():
     data_size = 0
     byte_size = 0
     sentence_num = 0
-    out_info = ede_model.extract_info(sentence_list)
+    start_a_time = time.time()
+    # out_info = ede_model.extract_info(sentence_list)
     # print(out_info)
+
+
+
     data_size += sum([len(sentence) for sentence in sentence_list])
     byte_size += sum([len(sentence.encode()) for sentence in sentence_list])
     print(sentence_list[0].encode())
     sentence_num += len(sentence_list)
 
     cost_time = time.time() - start_a_time
+
+    cost_time += 0.000000000000001
 
     print("data size {}".format(data_size))
     print("sentence num {}".format(sentence_num))
@@ -190,116 +196,7 @@ def test_extract_performance():
 entity_describe = [
     {"entity": "江苏恒瑞医药股份有限公司", "sentence": "江苏恒瑞医药股份有限公司是一家从事医药创新和高品质药品研发、生产及推广的医药健康企业"}
 ]
-
-def generate_label_data():
-    for iv in range(10):
-
-        data_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA\\wiki_0{}".format(iv)
-
-        data = load_json_line_data(data_path)
-
-        for i, dt in enumerate(data):
-            # if i > 0:
-            #     break
-            if dt["title"] in ["心理学", "设计模式", "2003年7月", "Wiki", "操作系统列表", "亳州市", "材料科学", "中国历史", "语言列表",
-                               "秦汉三国历史年表", "人物", "教育", "隋唐五代十国历史年表", "中国省级行政区面积列表", "中华人民共和国各省级行政区人口列表", "江苏省",
-                               "中华人民共和国各省级行政区人口密度列表",
-                               "JavaScript", "法国历史", "台湾国旗", "文明摇篮", "全球反对对伊战争大游行", "倩女幽魂 (1987年电影)", "元素列表",
-                "化学家列表", "摩托车", "松山区", "剧场", "各国人口列表", "国际电话区号列表", "彝族", "中华人民共和国历史年表", "中华民国大陆时期历史年表",
-                "GTK+", "GIMP", "德国", "南亚", "艾滋病名人列表", "生物病毒分类表", "师傅", "太白", "白血球", "中国大陆高等学校列表", "1949年", "巴鲁赫·斯宾诺莎", "数量级 (时间)", "清华大学", "英国大学列表",
-                "互联网顶级域列表", "1960年", "左丘明", "黑暗时代", "风车", "黄河", "1119年", "数学家列表", "1114年", "官方语言列表", "1983年", "计算机科学家列表", "图形文件格式比较", "历史上的今天", "澳大利亚",
-                "2003年4月", "星座面积列表", "2003年6月", "456年", "457年", "458年", "世界宗教列表", "化学物质列表", "物理学家列表", "世界宗教列表", "加拿大同性婚姻", "诸子百家", "清福陵", "美国历史年表",
-                               "美国各州人口列表", "江青 (消歧义)", "1976年", "1977年", "姓氏", "姓", "顺治帝", "图书馆信息学", "美国各州面积列表", "美国历史", "古典主义时期歌剧", "中国图书馆分类法 (O)",
-                "中国图书馆分类法 (Z)", "中国学科分类国家标准/110", "中国学科分类国家标准/120", "中国学科分类国家标准/130", "中国学科分类国家标准/140", "中国学科分类国家标准/150", "中国学科分类国家标准/160",
-                "中国学科分类国家标准/170", "中国学科分类国家标准/180", "中国学科分类国家标准/210", "中国学科分类国家标准/220", "中国学科分类国家标准/230", "中国学科分类国家标准/240",
-                "中国学科分类国家标准/310", "中国学科分类国家标准/320", "中国学科分类国家标准/330", "中国学科分类国家标准/340", "中国学科分类国家标准/350", "中国学科分类国家标准/360",
-                "中国学科分类国家标准/410", "中国学科分类国家标准/420", "中国学科分类国家标准/430", "中国学科分类国家标准/440", "中国学科分类国家标准/450", "中国学科分类国家标准/460",
-                "中国学科分类国家标准/470", "中国学科分类国家标准/480", "中国学科分类国家标准/490", "中国学科分类国家标准/510", "中国学科分类国家标准/520", "中国学科分类国家标准/530",
-                "中国学科分类国家标准/540", "中国学科分类国家标准/550", "中国学科分类国家标准/560", "中国学科分类国家标准/570", "中国学科分类国家标准/580", "中国学科分类国家标准/590",
-                "中国学科分类国家标准/610", "中国学科分类国家标准/620", "中国学科分类国家标准/630", "中国学科分类国家标准/710", "中国学科分类国家标准/720", "中国学科分类国家标准/730",
-                "中国学科分类国家标准/750", "中国学科分类国家标准/760", "中国学科分类国家标准/770", "中国学科分类国家标准/780", "中国学科分类国家标准/790", "中国学科分类国家标准/810",
-                "中国学科分类国家标准/820", "中国学科分类国家标准/830", "中国学科分类国家标准/850", "中国学科分类国家标准/860", "中国学科分类国家标准/870", "中国学科分类国家标准/880",
-                "中国学科分类国家标准/890", "中国学科分类国家标准/910", "日本电影列表", "美国电影列表", "法国电影列表", "德国电影列表", "瑞典电影列表", "矿业工程", "1967年", "算法",
-                "1966年", "导演列表", "中国学科分类国家标准/840", "扇形码", "比利时同性婚姻", "LGBT相关电视节目列表", "LGBT人物列表", "LGBT相关电影列表", "红白机游戏列表"
-                               ]:
-                continue
-            d = {
-                "Self": "Self语言",
-                "林纳斯·托瓦兹": "林纳斯·本纳第克特·托瓦兹",
-                "理查德·斯托曼": "理查德·马修·斯托曼",
-                "程序设计": "电脑程序设计",
-                "上海市": "上海",
-                "体育运动": "运动竞技",
-                "埃里克·雷蒙": "埃里克·斯蒂芬·雷蒙",
-                "阿诺·施瓦辛格": "阿诺·阿洛伊斯·施瓦辛格",
-                "三维计算机图像": "三维电脑图像",
-                "GNU通用公共许可证": "GNU通用公共授权条款",
-                "Wiki之道": "Wiki之道——网上快捷合作",
-                "大同区 (台湾)": "大同区",
-                "信义区 (台北市)": "信义区",
-                "大安区 (台北市)": "大安区",
-                "中正区 (台北市)": "中正区",
-                "苏州市": "苏州",
-                "Windows 1.0": "Microsoft Windows 1.0",
-                "元素周期表": "化学元素周期表",
-                "多用户": "多用户操作系统",
-                "Windows 3.x": "Windows 3.x",
-                "辅助型T细胞": "辅助T细胞",
-                "朝鲜 (称谓)": "朝鲜",
-                "弗里德里希·尼采": "弗里德里希·威廉·尼采",
-                "广州市": "广州",
-                "天花 (消歧义)": "天花",
-                "甲基叔丁基醚": "甲基第三丁基醚",
-                "美国国旗": "美利坚合众国国旗",
-                "创作共用": "知识共享",
-                "风车 (动力机)": "风车",
-                "风车 (玩具)": "风车",
-                "奥斯曼帝国": "鄂图曼帝国",
-                "阿拉伯字母": "阿拉伯语字母",
-                "香港特别行政区基本法第二十三条": "《中华人民共和国香港特别行政区基本法》第二十三条",
-                "引力": "重力",
-                "牛顿万有引力定律": "万有引力定律",
-                "2008年夏季奥林匹克运动会": "第二十九届夏季奥林匹克运动会",
-                "克里斯托夫·维利巴尔德·格鲁克": "克里斯托夫·维利巴尔德·里特·冯·格鲁克",
-                "妻子": "妻",
-                "理查德·瓦格纳": "威廉·理查德·瓦格纳",
-                "弗拉基米尔·伊里奇·列宁": "弗拉基米尔·伊里奇·乌里扬诺夫",
-                "博马舍": "皮埃尔-奥古斯坦·卡隆·德·博马舍",
-                "Pascal (程式语言)": "Pascal",
-                "拿破仑一世": "拿破仑·波拿巴",
-                "系统科学": "系统",
-                "黑色三角形": "倒转的黑色三角形",
-                "布罗尼斯拉夫·马林诺夫斯基": "布罗尼斯拉夫·卡斯珀·马林诺夫斯基",
-                "翁贝托·焦尔达诺": "翁贝托·梅诺蒂·玛利亚·焦尔达诺",
-                "家政学": "家政"
-            }
-            entity = dt["title"]
-            if entity in d:
-                entity = d[entity]
-
-            # print(entity)
-            # print(dt["text"])
-            sentence_list = re.split("[。\n]", dt["text"])
-
-            sentence = sentence_list[2]
-            if entity in ["肖申克的救赎", "Windows 2000", "Microsoft Windows", "Windows 98", "Windows 95", "红白机", "霸王别姬 (电影)"]:
-                sentence = entity + sentence_list[2]
-            entity_describe.append({
-                "entity": entity,
-                "sentence": sentence
-            })
-            print(len(entity_describe))
-if __name__ == "__main__":
-    ede_model = EntityDescribeExtractByRoleAnalysis()
-
-    data_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA\\wiki_11"
-
-    data = load_json_line_data(data_path)
-
-    for i, dt in enumerate(data):
-        # if i > 0:
-        #     break
-        if dt["title"] in ["心理学", "设计模式", "2003年7月", "Wiki", "操作系统列表", "亳州市", "材料科学", "中国历史", "语言列表",
+remove_title = ["心理学", "设计模式", "2003年7月", "Wiki", "操作系统列表", "亳州市", "材料科学", "中国历史", "语言列表",
                            "秦汉三国历史年表", "人物", "教育", "隋唐五代十国历史年表", "中国省级行政区面积列表", "中华人民共和国各省级行政区人口列表", "江苏省",
                            "中华人民共和国各省级行政区人口密度列表",
                            "JavaScript", "法国历史", "台湾国旗", "文明摇篮", "全球反对对伊战争大游行", "倩女幽魂 (1987年电影)", "元素列表",
@@ -334,10 +231,10 @@ if __name__ == "__main__":
                            "1967年", "算法",
                            "1966年", "导演列表", "中国学科分类国家标准/840", "扇形码", "比利时同性婚姻", "LGBT相关电视节目列表", "LGBT人物列表",
                            "LGBT相关电影列表", "红白机游戏列表", "电信", "各国首都列表", "常见姓氏列表", "恩格尔系数", "克林顿", "统一教对性的看法", "宗教与同性恋", "韦伯",
-            "布莱尔", "乔治·布什"
-                           ]:
-            continue
-        d = {
+            "布莱尔", "乔治·布什", "长城 (消歧义)", "华盛顿", "荷兰同性婚姻", "美国同性婚姻", "管弦乐团列表", "歌剧魅影 (音乐剧)", "韩国 (消歧义)", "大阪 (消歧义)"
+                           ]
+
+d = {
             "Self": "Self语言",
             "林纳斯·托瓦兹": "林纳斯·本纳第克特·托瓦兹",
             "理查德·斯托曼": "理查德·马修·斯托曼",
@@ -395,8 +292,61 @@ if __name__ == "__main__":
             "温琴佐·贝利尼": "温琴佐·萨尔瓦多·卡梅洛·弗朗切斯科·贝利尼",
             "卡尔·马利亚·冯·韦伯": "卡尔·马利亚·弗里德里希·恩斯特·冯·韦伯",
             "自由射手": "魔弹射手",
-            "同性恋恐惧": "同性恋恐惧症"
+            "同性恋恐惧": "同性恋恐惧症",
+            "民主党 (美国)": "民主党",
+            "文件扩展名": "副档名",
+            "指挥家": "指挥",
+            "歌剧院列表": "歌剧院",
+            "猫 (音乐剧)": "《猫》",
+            "慈禧太后": "孝钦显皇后",
+            "皇太极": "清太宗皇太极",
+            "刀 (中国)": "刀",
+            "鲍勃·霍普": "莱斯利·汤斯·霍普"
         }
+
+add_title = ["肖申克的救赎", "Windows 2000", "Microsoft Windows", "Windows 98", "Windows 95", "红白机", "霸王别姬 (电影)",
+                      "Java", "PlayStation (游戏机)", ]
+def generate_label_data():
+    for iv in range(12):
+
+        data_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA\\wiki_{:0>2d}".format(iv)
+
+        data = load_json_line_data(data_path)
+
+        for i, dt in enumerate(data):
+            # if i > 0:
+            #     break
+            if dt["title"] in remove_title:
+                continue
+            entity = dt["title"]
+            if entity in d:
+                entity = d[entity]
+
+            # print(entity)
+            # print(dt["text"])
+            sentence_list = re.split("[。\n]", dt["text"])
+
+            sentence = sentence_list[2]
+            if entity in add_title:
+                sentence = entity + sentence_list[2]
+            entity_describe.append({
+                "entity": entity,
+                "sentence": sentence
+            })
+            print(len(entity_describe))
+if __name__ == "__main__":
+    ede_model = EntityDescribeExtractByRoleAnalysis()
+
+    data_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA\\wiki_11"
+
+    data = load_json_line_data(data_path)
+
+    for i, dt in enumerate(data):
+        # if i > 0:
+        #     break
+        if dt["title"] in remove_title:
+            continue
+
         entity = dt["title"]
         if entity in d:
             entity = d[entity]
@@ -406,11 +356,11 @@ if __name__ == "__main__":
         sentence_list = re.split("[。\n]", dt["text"])
 
         sentence = sentence_list[2]
-        if entity in ["肖申克的救赎", "Windows 2000", "Microsoft Windows", "Windows 98", "Windows 95", "红白机", "霸王别姬 (电影)",
-                      "Java"]:
+        if entity in add_title:
             sentence = entity + sentence_list[2]
         print(entity)
         print(sentence)
+    # test_extract_performance()
 
 
         # ede_model.extract_info(sentence_list)
