@@ -47,17 +47,25 @@ class PointerNet(tf.keras.models.Model):
     def __init__(self, vocab_size, embed_size, word_size, word_embed_size, lstm_size, predicate_num):
         super(PointerNet, self).__init__()
         self.embed = tf.keras.layers.Embedding(vocab_size, embed_size, mask_zero=True)
-        # self.word_embed = tf.keras.layers.Embedding(word_size, word_embed_size)
+        self.word_embed = tf.keras.layers.Embedding(word_size, word_embed_size)
         self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size, return_sequences=True))
         self.sub_classifier = tf.keras.layers.Dense(2, activation="sigmoid")
         self.po_classifier = tf.keras.layers.Dense(predicate_num*2, activation="sigmoid")
 
-    def call(self, inputs, input_sub_span, training=None, mask=None):
-        input_embed = self.embed(inputs)
+    def call(self, inputs, word_ids, input_sub_span=None, training=None, mask=None):
+        char_embed = self.embed(inputs)
+        word_embed = self.word_embed(word_ids)
+
+        embed = tf.concat([char_embed, word_embed], axis=-1)
         mask_value = math_ops.not_equal(inputs, 0)
-        input_lstm_value = self.bi_lstm(input_embed, mask=mask_value)
+        input_lstm_value = self.bi_lstm(embed, mask=mask_value)
 
         sub_preds = self.sub_classifier(input_lstm_value)
+        if not training:
+            input_sub_span = tf.where(tf.greater(sub_preds, 0.5), 1.0, 0.0)
+            input_sub_span = input_sub_span[:,:,0] + input_sub_span[:,:,1]
+            input_sub_span = tf.where(tf.greater(input_sub_span, 0.0), 1.0, 0.0)
+
         input_sub_span = tf.expand_dims(input_sub_span, axis=-1)
 
         input_sub_feature = tf.multiply(input_lstm_value, input_sub_span)
@@ -70,21 +78,21 @@ class PointerNet(tf.keras.models.Model):
 
         return sub_preds, po_preds, mask_value
 
-    def predict(self, inputs):
-        input_embed = self.embed(inputs)
-        mask_value = math_ops.not_equal(inputs, 0)
-        input_lstm_value = self.bi_lstm(input_embed, mask=mask_value)
-
-        sub_preds = self.sub_classifier(input_lstm_value)
-
-        input_sub_span = tf.where(tf.logical_and(sub_preds>0.5), tf.ones_like(sub_preds), sub_preds)
-        input_sub_span = tf.expand_dims(input_sub_span, axis=-1)
-        input_sub_feature = tf.multiply(input_lstm_value, input_sub_span)
-        input_po_feature = tf.concat([input_lstm_value, input_sub_feature], axis=-1)
-
-        po_preds = self.po_classifier(input_po_feature)
-
-        sub_preds = tf.transpose(sub_preds, perm=[0, 2, 1])
-        po_preds = tf.transpose(po_preds, perm=[0, 2, 1])
-
-        return sub_preds, po_preds, mask_value
+    # def predict(self, inputs):
+        # input_embed = self.embed(inputs)
+        # mask_value = math_ops.not_equal(inputs, 0)
+        # input_lstm_value = self.bi_lstm(input_embed, mask=mask_value)
+        #
+        # sub_preds = self.sub_classifier(input_lstm_value)
+        #
+        # input_sub_span = tf.where(tf.greater(sub_preds, 0.5), 1.0, 0.0)
+        # input_sub_span = tf.expand_dims(input_sub_span, axis=-1)
+        # input_sub_feature = tf.multiply(input_lstm_value, input_sub_span)
+        # input_po_feature = tf.concat([input_lstm_value, input_sub_feature], axis=-1)
+        #
+        # po_preds = self.po_classifier(input_po_feature)
+        #
+        # sub_preds = tf.transpose(sub_preds, perm=[0, 2, 1])
+        # po_preds = tf.transpose(po_preds, perm=[0, 2, 1])
+        #
+        # return sub_preds, po_preds, mask_value
