@@ -11,154 +11,154 @@
 """
 import time
 import re
-from ltp import LTP
-from pyhanlp import HanLP
+# from ltp import LTP
+# from pyhanlp import HanLP
 from nlp_applications.data_loader import load_json_line_data
 import multiprocessing
 
 
 
 
-class EntityDescribeExtractByRoleAnalysisV1(object):
-    """
-        基于ltp 角色分析进行实体和实体描述信息抽取
-    """
-
-    def __init__(self, ltp_model_path="tiny"):
-        self.ltp = LTP(ltp_model_path)
-
-    def single_sentence(self, input_sentence, ind=0):
-        seg, hidden = self.ltp.seg([input_sentence])
-        words = seg[ind]
-
-        pos = self.ltp.pos(hidden)[ind]
-        roles = self.ltp.srl(hidden, keep_empty=False)[ind]
-
-        filter_p = {"是", "为"}
-        role_list = ["A0", "A1", "A2", "A3", "A4"]
-        # print(words)
-        spo_list = []
-        for role in roles:
-            r_indx, r_list = role
-
-            p_value = words[r_indx]
-            r_list = list(filter(lambda x: x[0] in role_list, r_list))
-            if len(r_list) != 2:
-                continue
-            sub = r_list[0]
-            obj = r_list[1]
-
-            if sub[0] not in role_list:
-                continue
-            if obj[0] not in role_list:
-                continue
-            if sub[2] >= r_indx:
-                continue
-            if obj[1] <= r_indx:
-                continue
-            # 谓语过滤
-            if p_value not in filter_p:
-                continue
-            if p_value == "为":
-                sub, obj = obj, sub
-
-            # 词性过滤
-            if pos[sub[2]] not in ["n", "nz"]:
-                continue
-
-            sub_value = words[sub[1]:sub[2] + 1]
-
-            obj_value = words[obj[1]:obj[2] + 1]
-
-            # print("".join(sub_value), p_value, "".join(obj_value))
-            spo_list.append(("".join(sub_value), p_value, "".join(obj_value)))
-
-        return spo_list
-
-    def extract_info(self, input_sentence_list):
-        """ 抽取实体描述信息
-        Args:
-            input_sentence_list:
-
-        Returns:
-            entity_describe_res: List[{"sentence": xxx, "entity": xxx, "describe":xxx}]
-
-        """
-        entity_describe_res = []
-        for i, sentence in enumerate(input_sentence_list):
-            sentence = sentence.strip()
-            if len(sentence) < 10:
-                continue
-            if len(sentence) > 100:
-                continue
-            if not re.fullmatch("^[\u4e00-\u9fa5_a-zA-Z]{1,15}是.+$", sentence):
-                continue
-            out_spo_list = self.single_sentence(sentence)
-
-            for spo in out_spo_list:
-                entity_describe_res.append({"sentence": sentence, "entity": spo[0], "describe": spo[2]})
-        return entity_describe_res
-
-    def single_sentence_v2(self, input_sentence):
-        sentence_feature = [(cut.DEPREL, cut.LEMMA) for cut in HanLP.parseDependency(input_sentence)]
-        if sentence_feature[0][0] != "主谓关系":
-            return True
-        if ("核心关系", "是") not in sentence_feature:
-            return True
-        return False
-
-    def multi_extract_info(self, input_sentence_list):
-        pool = multiprocessing.Pool(processes=3)
-        spo_res = []
-        for i, sentence in enumerate(input_sentence_list):
-            sentence = sentence.strip()
-            if len(sentence) == 0:
-                continue
-
-            out_spo_list = pool.apply_async(self.single_sentence, (sentence,))
-            # out_spo_list = self.single_sentence(sentence)
-            spo_res.append(out_spo_list)
-            # spo_res.append((sentence, out_spo_list))
-        pool.close()
-        pool.join()
-
-        spo_res = [spo.get() for i, spo in enumerate(spo_res)]
-        return spo_res
-
-
-class EntityDescribeExtractByRoleAnalysis(object):
-    """
-        基于xxx 进行实体和实体描述信息抽取
-    """
-
-    def extract_info(self, input_sentence_list):
-        print(HanLP.parseDependency(input_sentence_list[2]))
-        res = [(cut.DEPREL, cut.LEMMA) for cut in HanLP.parseDependency(input_sentence_list[2])]
-        print(res)
-
-
-
-
-def multi_process(processes_num=4):
-    ede_model = EntityDescribeExtractByRoleAnalysis()
-    pool = multiprocessing.Pool(processes=processes_num)
-    result = []
-    for i, dt in enumerate(data):
-        if i >= 5:
-            break
-        print(dt["title"])
-        sentence_list = re.split("[。\n]", dt["text"])
-
-        print(len(sentence_list))
-
-        out_spo = pool.apply_async(ede_model.extract_info, (sentence_list,))
-        result.append(out_spo)
-
-    for res in result:
-        print(":::", res.get())
+# class EntityDescribeExtractByRoleAnalysisV1(object):
+#     """
+#         基于ltp 角色分析进行实体和实体描述信息抽取
+#     """
+#
+#     def __init__(self, ltp_model_path="tiny"):
+#         self.ltp = LTP(ltp_model_path)
+#
+#     def single_sentence(self, input_sentence, ind=0):
+#         seg, hidden = self.ltp.seg([input_sentence])
+#         words = seg[ind]
+#
+#         pos = self.ltp.pos(hidden)[ind]
+#         roles = self.ltp.srl(hidden, keep_empty=False)[ind]
+#
+#         filter_p = {"是", "为"}
+#         role_list = ["A0", "A1", "A2", "A3", "A4"]
+#         # print(words)
+#         spo_list = []
+#         for role in roles:
+#             r_indx, r_list = role
+#
+#             p_value = words[r_indx]
+#             r_list = list(filter(lambda x: x[0] in role_list, r_list))
+#             if len(r_list) != 2:
+#                 continue
+#             sub = r_list[0]
+#             obj = r_list[1]
+#
+#             if sub[0] not in role_list:
+#                 continue
+#             if obj[0] not in role_list:
+#                 continue
+#             if sub[2] >= r_indx:
+#                 continue
+#             if obj[1] <= r_indx:
+#                 continue
+#             # 谓语过滤
+#             if p_value not in filter_p:
+#                 continue
+#             if p_value == "为":
+#                 sub, obj = obj, sub
+#
+#             # 词性过滤
+#             if pos[sub[2]] not in ["n", "nz"]:
+#                 continue
+#
+#             sub_value = words[sub[1]:sub[2] + 1]
+#
+#             obj_value = words[obj[1]:obj[2] + 1]
+#
+#             # print("".join(sub_value), p_value, "".join(obj_value))
+#             spo_list.append(("".join(sub_value), p_value, "".join(obj_value)))
+#
+#         return spo_list
+#
+#     def extract_info(self, input_sentence_list):
+#         """ 抽取实体描述信息
+#         Args:
+#             input_sentence_list:
+#
+#         Returns:
+#             entity_describe_res: List[{"sentence": xxx, "entity": xxx, "describe":xxx}]
+#
+#         """
+#         entity_describe_res = []
+#         for i, sentence in enumerate(input_sentence_list):
+#             sentence = sentence.strip()
+#             if len(sentence) < 10:
+#                 continue
+#             if len(sentence) > 100:
+#                 continue
+#             if not re.fullmatch("^[\u4e00-\u9fa5_a-zA-Z]{1,15}是.+$", sentence):
+#                 continue
+#             out_spo_list = self.single_sentence(sentence)
+#
+#             for spo in out_spo_list:
+#                 entity_describe_res.append({"sentence": sentence, "entity": spo[0], "describe": spo[2]})
+#         return entity_describe_res
+#
+#     def single_sentence_v2(self, input_sentence):
+#         sentence_feature = [(cut.DEPREL, cut.LEMMA) for cut in HanLP.parseDependency(input_sentence)]
+#         if sentence_feature[0][0] != "主谓关系":
+#             return True
+#         if ("核心关系", "是") not in sentence_feature:
+#             return True
+#         return False
+#
+#     def multi_extract_info(self, input_sentence_list):
+#         pool = multiprocessing.Pool(processes=3)
+#         spo_res = []
+#         for i, sentence in enumerate(input_sentence_list):
+#             sentence = sentence.strip()
+#             if len(sentence) == 0:
+#                 continue
+#
+#             out_spo_list = pool.apply_async(self.single_sentence, (sentence,))
+#             # out_spo_list = self.single_sentence(sentence)
+#             spo_res.append(out_spo_list)
+#             # spo_res.append((sentence, out_spo_list))
+#         pool.close()
+#         pool.join()
+#
+#         spo_res = [spo.get() for i, spo in enumerate(spo_res)]
+#         return spo_res
+#
+#
+# class EntityDescribeExtractByRoleAnalysis(object):
+#     """
+#         基于xxx 进行实体和实体描述信息抽取
+#     """
+#
+#     def extract_info(self, input_sentence_list):
+#         print(HanLP.parseDependency(input_sentence_list[2]))
+#         res = [(cut.DEPREL, cut.LEMMA) for cut in HanLP.parseDependency(input_sentence_list[2])]
+#         print(res)
+#
+#
+#
+#
+# def multi_process(processes_num=4):
+#     ede_model = EntityDescribeExtractByRoleAnalysis()
+#     pool = multiprocessing.Pool(processes=processes_num)
+#     result = []
+#     for i, dt in enumerate(data):
+#         if i >= 5:
+#             break
+#         print(dt["title"])
+#         sentence_list = re.split("[。\n]", dt["text"])
+#
+#         print(len(sentence_list))
+#
+#         out_spo = pool.apply_async(ede_model.extract_info, (sentence_list,))
+#         result.append(out_spo)
+#
+#     for res in result:
+#         print(":::", res.get())
 
 def test_extract_performance():
-    ede_model = EntityDescribeExtractByRoleAnalysis()
+    # ede_model = EntityDescribeExtractByRoleAnalysis()
 
 
     sentence_list = ["数学是利用符号语言研究数量、结构、变化以及空间等概念的一门学科，从某种角度看属于形式科学的一种。",
@@ -231,7 +231,8 @@ remove_title = ["心理学", "设计模式", "2003年7月", "Wiki", "操作系�
                            "1967年", "算法",
                            "1966年", "导演列表", "中国学科分类国家标准/840", "扇形码", "比利时同性婚姻", "LGBT相关电视节目列表", "LGBT人物列表",
                            "LGBT相关电影列表", "红白机游戏列表", "电信", "各国首都列表", "常见姓氏列表", "恩格尔系数", "克林顿", "统一教对性的看法", "宗教与同性恋", "韦伯",
-            "布莱尔", "乔治·布什", "长城 (消歧义)", "华盛顿", "荷兰同性婚姻", "美国同性婚姻", "管弦乐团列表", "歌剧魅影 (音乐剧)", "韩国 (消歧义)", "大阪 (消歧义)"
+            "布莱尔", "乔治·布什", "长城 (消歧义)", "华盛顿", "荷兰同性婚姻", "美国同性婚姻", "管弦乐团列表", "歌剧魅影 (音乐剧)", "韩国 (消歧义)", "大阪 (消歧义)", "夏商周年表",
+                "非洲历史", "世界语语法", "Hello World", "联合国会员国列表", "欧洲联盟", "第一代编程语言", "巴洛克时期歌剧"
                            ]
 
 d = {
@@ -301,15 +302,34 @@ d = {
             "慈禧太后": "孝钦显皇后",
             "皇太极": "清太宗皇太极",
             "刀 (中国)": "刀",
-            "鲍勃·霍普": "莱斯利·汤斯·霍普"
+            "鲍勃·霍普": "莱斯利·汤斯·霍普",
+            "广东省": "广东",
+            "陕西省": "陕西",
+            "山西省": "山西",
+            "平方千米": "平方公里",
+            "硬件": "硬体",
+            "加拿大行政区划": "加拿大的行政区划",
+            "C♯": "C#",
+            "C语言": "C",
+            "人类免疫缺陷病毒": "人类免疫缺乏病毒",
+            "超文本传输协议": "超文本传输协定",
+            "勒内·笛卡尔": "勒内·笛卡儿",
+            "弗兰西斯·培根": "弗朗西斯·培根",
+            "多媒体短讯": "多媒体短信",
+            "F♯": "F#",
+            "巴巴拉·麦克林托克": "芭芭拉·麦克林托克",
+            "联合国教育、科学及文化组织": "联合国教育、科学与文化组织",
+            "乔治·赫伯特·沃克·布什": "乔治·赫伯特·华克·布什",
+            "詹姆斯·麦迪逊": "詹姆士·麦迪逊"
         }
 
 add_title = ["肖申克的救赎", "Windows 2000", "Microsoft Windows", "Windows 98", "Windows 95", "红白机", "霸王别姬 (电影)",
                       "Java", "PlayStation (游戏机)", ]
 def generate_label_data():
+    entity_des_data = []
     for iv in range(12):
 
-        data_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA\\wiki_{:0>2d}".format(iv)
+        data_path = "D:\data\\nlp\语料库\wiki_zh_2019\wiki_zh\AA\\wiki_{:0>2d}".format(iv)
 
         data = load_json_line_data(data_path)
 
@@ -333,34 +353,44 @@ def generate_label_data():
                 "entity": entity,
                 "sentence": sentence
             })
-            print(len(entity_describe))
+
 if __name__ == "__main__":
-    ede_model = EntityDescribeExtractByRoleAnalysis()
+    # ede_model = EntityDescribeExtractByRoleAnalysis()
 
-    data_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA\\wiki_11"
+    # data_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA\\wiki_11"
+    #
+    # data = load_json_line_data(data_path)
+    #
+    # for i, dt in enumerate(data):
+    #     # if i > 0:
+    #     #     break
+    #     if dt["title"] in remove_title:
+    #         continue
+    #
+    #     entity = dt["title"]
+    #     if entity in d:
+    #         entity = d[entity]
+    #
+    #     # print(entity)
+    #     # print(dt["text"])
+    #     sentence_list = re.split("[。\n]", dt["text"])
+    #
+    #     sentence = sentence_list[2]
+    #     if entity in add_title:
+    #         sentence = entity + sentence_list[2]
+    #     print(entity)
+    #     print(sentence)
+    # # test_extract_performance()
 
-    data = load_json_line_data(data_path)
+    generate_label_data()
 
-    for i, dt in enumerate(data):
-        # if i > 0:
-        #     break
-        if dt["title"] in remove_title:
-            continue
-
-        entity = dt["title"]
-        if entity in d:
-            entity = d[entity]
-
-        # print(entity)
-        # print(dt["text"])
-        sentence_list = re.split("[。\n]", dt["text"])
-
-        sentence = sentence_list[2]
-        if entity in add_title:
-            sentence = entity + sentence_list[2]
-        print(entity)
-        print(sentence)
-    # test_extract_performance()
-
+    for entity_des in entity_describe:
+        sentence  = entity_des["sentence"]
+        entity = entity_des["entity"]
+        try:
+            print(sentence.index(entity))
+        except Exception:
+            print(sentence, entity)
+            raise Exception
 
         # ede_model.extract_info(sentence_list)
