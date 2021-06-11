@@ -9,6 +9,7 @@
     任务名称：实体 实体描述分析，目的是抽取出文本中的实体以及对应的实体描述。
 
 """
+import os
 import jieba
 import time
 import re
@@ -140,52 +141,130 @@ class EntityDescribeExtractByRoleAnalysis(object):
         document = self.HanLP([input_sentence])
         roles = document["srl"][0]
 
-        # pos = self.ltp.pos(hidden)[ind]
-        # roles = self.ltp.srl(hidden, keep_empty=False)[ind]
-
-        # filter_p = {"是", "为"}
-        # role_list = ["A0", "A1", "A2", "A3", "A4"]
-        # # print(words)
         spo_list = []
+        print(input_sentence)
+        for role_part in roles[:1]:
 
-        # for role_part in roles[0]:
-        spo = dict()
-        for role_mention, role_key, start, end in roles[0]:
-            if role_key not in self.role_list:
+            spo = dict()
+            for role_mention, role_key, start, end in role_part:
+                if role_key not in self.role_list:
+                    continue
+                if role_key == "PRED" and role_mention not in self.filter_p:
+                    continue
+                if role_key == "PRED":
+                    spo["p"] = (role_mention, start, end)
+                elif role_key == "ARG0":
+                    spo["s"] = (role_mention, start, end)
+                elif role_key == "ARG1":
+                    spo["o"] = (role_mention, start, end)
+            if "p" not in spo:
                 continue
-            if role_key == "PRED" and role_mention not in self.filter_p:
+            if "o" not in spo:
                 continue
-            if role_key == "PRED":
-                spo["p"] = (role_mention, start, end)
-            elif role_key == "ARG0":
-                spo["s"] = (role_mention, start, end)
-            elif role_key == "ARG1":
-                spo["o"] = (role_mention, start, end)
-        if spo.get("p") and spo.get("s") and spo.get("o"):
+            if "s" not in spo:
+                continue
+            if spo["p"][1] < spo["s"][2]:
+                continue
+            if spo["p"][2] > spo["o"][1]:
+                continue
+
             spo_list.append(spo)
 
         return spo_list
 
-    def extract_info(self, input_sentence_list):
-        entity_describe_res = []
-        for sentence in input_sentence_list:
-            sentence = sentence.strip()
-            if len(sentence) < 10:
-                continue
-            if len(sentence) > 100:
-                continue
-            if not re.fullmatch("^[\u4e00-\u9fa5_a-zA-Z]{1,15}是.+$", sentence):
+    def single_document(self, input_document_srl, input_document_pos, input_document_word, input_document_dep=None):
+
+        spo_list = []
+        for role_part in input_document_srl:
+            spo = {}
+            if len(role_part) != 3:
                 continue
 
-            out_spo_list = self.single_sentence(sentence)
+            for role_mention, role_key, start, end in role_part:
+                if role_key not in self.role_list:
+                    continue
+                if role_key == "PRED" and role_mention not in self.filter_p:
+                    continue
+                if role_key == "PRED":
+                    spo["p"] = (role_mention, start, end)
+                elif role_key == "ARG0":
+                    spo["s"] = (role_mention, start, end)
+                elif role_key == "ARG1":
+                    spo["o"] = (role_mention, start, end)
+
+            if "p" not in spo:
+                continue
+            if "o" not in spo:
+                continue
+            if "s" not in spo:
+                continue
+            # 主语最后一个词必须是名词
+            if input_document_pos[spo["s"][2]-1] not in ["n"]:
+                continue
+            if input_document_pos[spo["o"][2]-1] not in ["n"]:
+                continue
+            if input_document_word[spo["s"][1]] in ["这", "后面", "我", "那些", "这些", "這", "这个", "她", "我们", "本",
+                                                    "该", "那", "他们", "下列", "这位", "哪个", "下面", "前", "后", "这部",
+                                                    "下图", "圖", "公司", "他", "现在", "今日", "今天", "这次", "你", "右图",
+                                                    "本文", "左边", "图"]:
+                continue
+            if input_document_word[spo["o"][1]] in ["我", "本", "我们"]:
+                continue
+            if input_document_dep[spo["o"][2]-1][0] != spo["p"][1]+1:
+                continue
+            # if input_document_dep[spo["p"][1]][1] != "root":
+            #     continue
+            if len(spo["o"][0]) < 10:
+                continue
+            if spo["p"][1] < spo["s"][2]:
+                continue
+            if spo["p"][2] > spo["o"][1]:
+                continue
+
+            spo_list.append(spo)
+
+        return spo_list
+
+    def extract_info(self, input_data):
+        if isinstance(input_data, str):
+            input_sentence_list = re.split("([。？！\s+/\n])", input_data)
+        elif isinstance(input_data, list):
+            input_sentence_list = input_data
+        else:
+            raise TypeError
+
+        def simple_filter(i_sentence):
+            if len(i_sentence) < 10:
+                return False
+            if len(i_sentence) > 100:
+                return False
+            if i_sentence[-1] in ["?", "？"]:
+                return False
+            if not re.fullmatch("^[\u4e00-\u9fa5_a-zA-Z]{1,15}是.+$", i_sentence):
+                return False
+            if re.fullmatch("^.+吗$", i_sentence):
+                return False
+            return True
+
+        input_sentence_list = [sentence.strip() for sentence in input_sentence_list if simple_filter(sentence.strip())]
+        output_documents = self.HanLP(input_sentence_list)
+        entity_describe_res = []
+        for i, document in enumerate(output_documents.get("srl", list())):
+            sentence_words = output_documents["tok/fine"][i]
+            out_spo_list = self.single_document(document,
+                                                output_documents["pos/pku"][i],
+                                                sentence_words,
+                                                output_documents["dep"][i])
             for spo in out_spo_list:
-                entity_describe_res.append({"sentence": sentence, "entity": spo["s"], "describe": spo["o"]})
+                entity_describe_res.append(({"sentence": input_sentence_list[i],
+                                            "entity": spo["s"][0],
+                                            "describe": "".join(sentence_words[spo["s"][1]:spo["o"][2]])},
+                                            sentence_words,
+                                            output_documents["dep"][i]
+                                            ))
 
         return entity_describe_res
-#
-#
-#
-#
+
 # def multi_process(processes_num=4):
 #     ede_model = EntityDescribeExtractByRoleAnalysis()
 #     pool = multiprocessing.Pool(processes=processes_num)
@@ -203,6 +282,7 @@ class EntityDescribeExtractByRoleAnalysis(object):
 #
 #     for res in result:
 #         print(":::", res.get())
+
 
 def test_extract_performance():
     ede_model = EntityDescribeExtractByRoleAnalysis()
@@ -223,10 +303,9 @@ def test_extract_performance():
     # print(out_info)
 
 
-
     data_size += sum([len(sentence) for sentence in sentence_list])
     byte_size += sum([len(sentence.encode()) for sentence in sentence_list])
-    print(sentence_list[0].encode())
+    # print(sentence_list[0].encode())
     sentence_num += len(sentence_list)
 
     cost_time = time.time() - start_a_time
@@ -405,86 +484,96 @@ from scipy import spatial
 from numpy import dot
 from numpy.linalg import norm
 
+
 def cosine_sim(a, b):
     return dot(a, b)/(norm(a)*norm(b))
 
-if __name__ == "__main__":
-    # ede_model = EntityDescribeExtractByRoleAnalysis()
 
-    # data_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA\\wiki_11"
-    #
-    # data = load_json_line_data(data_path)
-    #
-    # for i, dt in enumerate(data):
-    #     # if i > 0:
-    #     #     break
-    #     if dt["title"] in remove_title:
-    #         continue
-    #
-    #     entity = dt["title"]
-    #     if entity in d:
-    #         entity = d[entity]
-    #
-    #     # print(entity)
-    #     # print(dt["text"])
-    #     sentence_list = re.split("[。\n]", dt["text"])
-    #
-    #     sentence = sentence_list[2]
-    #     if entity in add_title:
-    #         sentence = entity + sentence_list[2]
-    #     print(entity)
-    #     print(sentence)
+weibo_path = "D:\data\语料库\weibo_2019-05-18_10.30.41.txt\weibo_2019-05-18_10.30.41"
+wiki_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA"
+
+
+def generator_weibo_list(i_path):
+    file_list = os.listdir(i_path)
+    for file in file_list:
+        weibo_file_path = i_path + "\\" + file
+        with open(weibo_file_path, "r", encoding="utf-8") as f:
+            data = f.read()
+
+            for weibo_one in data.split("\n"):
+                if weibo_one.strip():
+                    yield weibo_one
+
+
+def generator_wikicn_list(i_path):
+    file_list = os.listdir(i_path)
+    for file in file_list:
+        wiki_file_path = i_path + "\\" + file
+        data_list = load_json_line_data(wiki_file_path)
+        for data in data_list:
+            print(data["title"])
+            yield data["text"]
+
+
+if __name__ == "__main__":
+    ede_model = EntityDescribeExtractByRoleAnalysis()
+
+
     # # test_extract_performance()
     # word_embed_path = "D:\\data\\word2vec\\sgns.weibo.char\\sgns.weibo.char"
     # word_embed = load_word_vector(word_embed_path)
     # edera = EntityDescribeExtractByRoleAnalysis()
     # # HanLP = hanlp.load(hanlp.pretrained.mtl.CLOSE_TOK_POS_NER_SRL_DEP_SDP_CON_ELECTRA_SMALL_ZH)
     # generate_label_data()
-    # sentences_embed_list = []
-    # data_size = 0
-    # start = time.time()
+    # # # sentences_embed_list = []
+    data_size = 0.0
+    byte_size = 0.0
+    cost_time = 0.0
+
     # path = "test.txt"
-    # for entity_des in entity_describe[:10]:
-    #     sentence  = entity_des["sentence"]
-    #     entity = entity_des["entity"]
-    #     sentence.index(entity)
-    #     data_size += len(entity_des["sentence"])
-    #
-    #     # sentence_words = list(jieba.cut(sentence))
-    #     count = 0
-    #     # sentence_embed = [word_embed[word] for word in jieba.cut(sentence) if word in word_embed]
-    #     # sentence_embed = np.array(sentence_embed)
-    #     # sentence_embed = np.mean(sentence_embed, axis=0)
-    #     # sentences_embed_list.append(sentence_embed)
-    #     print(sentence)
-    #     print(edera.single_sentence(sentence))
-    #     # for cut in HanLP.parseDependency(sentence):
-    #     #     # print(cut.DEPREL)
-    #     #     # print(cut.LEMMA)
-    #     #     print(cut)
-    #     # parse_result = HanLP.parseDependency(sentence)
-    #     # parse_result.pretty_print()
-    #     # HanLP([sentence]).pretty_print()
-    #     # with open(path, "w", encoding='utf-8') as f:
-    #     #     f.write(str(parse_result))
-    # end_time = time.time()
-    # print(data_size/(end_time-start))
+    # sentence_list = [entity_des["sentence"] for entity_des in entity_describe[:10]]
+    # print(ede_model.extract_info(sentence_list))
 
-    test_extract_performance()
+    data_iter = generator_wikicn_list(wiki_path)
+    sentence = 0
+    for data_content in data_iter:
+        data_size += len(data_content)
+        byte_size += len(data_content.encode())
+        start = time.time()
+        data_list = re.split("([。？！\s+/\n])", data_content)
+        data_list.append("")
+        data_list = ["".join(i) for i in zip(data_list[0::2], data_list[1::2])]
+
+        e_res = ede_model.extract_info(data_list)
+        if e_res:
+            # print(data_content)
+            print(e_res[0][0])
+            print(e_res[0][1])
+            print(e_res[0][2])
+        sentence += len(data_list)
+        cost_time += time.time() - start + 0.000000000000001
 
 
+    print("data size {}".format(data_size))
+    print("sentence num {}".format(sentence))
+    print("cost time {} s".format(cost_time))
+    print("{} sentence/s".format(sentence / cost_time))
+    print("{} char/s".format(data_size / cost_time))
+    print("{} byte/s".format(byte_size / cost_time))
 
-    # print(cosine_sim(sentences_embed_list[0], sentences_embed_list[9]))
-    # res = 1-spatial.distance.cosine(sentences_embed_list[1], sentences_embed_list[2])
-    # print(res)
-
-        # print(HanLP.parseDependency(sentence))
-        # sentence_feature = [(cut.DEPREL, cut.LEMMA) for cut in HanLP.parseDependency(sentence)]
-        # print(sentence_feature)
-        # try:
-        #     print(sentence.index(entity))
-        # except Exception:
-        #     print(sentence, entity)
-        #     raise Exception
-
-        # ede_model.extract_info(sentence_list)
+    """ 
+        按照？。！\n \s 等进行分句，要保留句子最后的标点符号
+            
+        句子过短，少于10个字符 => 过滤
+        句子很长，长于100个字符 => 过滤
+        谓语不是 【是】 => 过滤
+        主语最后一个词必须是名词
+        谓词最后一个词必须是名词
+        
+        什么是白血病【？】 => 问好结尾，过滤掉
+        钱爸是【我】觉得性格特别好的一个人 => 具有主观色彩，过滤掉
+        河豚拉面的高汤是【我】喝过的世界上最好喝的汤
+        
+        人是一堆无用的热情，盛放爱意的容器 => 散文中存在的，如何处理暂定
+        
+    """
