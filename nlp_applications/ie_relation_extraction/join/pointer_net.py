@@ -41,6 +41,27 @@ class ConditionalLayerNorm(tf.keras.layers.Layer):
         x = (x - u) / tf.sqrt(s + self.variance_epsilon)
         return weight * x + bias
 
+def seq_gather(seq, idxs):
+    """seq是[None, seq_len, s_size]的格式，
+    idxs是[None, 1]的格式，在seq的第i个序列中选出第idxs[i]个向量，
+    最终输出[None, s_size]的向量。
+    """
+    idxs = tf.cast(idxs, tf.int32)
+    batch_idxs = tf.range(0, tf.shape(seq)[0])
+    batch_idxs = tf.expand_dims(batch_idxs, 1)
+    idxs = tf.concat([batch_idxs, idxs], 1)
+    return tf.gather_nd(seq, idxs)
+
+
+def seq_and_vec(seq, vec):
+    """seq是[None, seq_len, s_size]的格式，
+    vec是[None, v_size]的格式，将vec重复seq_len次，拼到seq上，
+    得到[None, seq_len, s_size+v_size]的向量。
+    """
+    vec = tf.expand_dims(vec, 1)
+    vec = tf.zeros_like(seq[:, :, :1]) + vec
+    return tf.concat([seq, vec], 2)
+
 
 class PointerNet(tf.keras.models.Model):
 
@@ -51,8 +72,9 @@ class PointerNet(tf.keras.models.Model):
         self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size, return_sequences=True))
         self.sub_classifier = tf.keras.layers.Dense(2, activation="sigmoid")
         self.po_classifier = tf.keras.layers.Dense(predicate_num*2, activation="sigmoid")
+        self.predicate_num = predicate_num
 
-    def call(self, inputs, word_ids, input_sub_span=None, training=None, mask=None):
+    def call(self, inputs, word_ids, input_sub_loc=None, training=None, mask=None):
         char_embed = self.embed(inputs)
         word_embed = self.word_embed(word_ids)
 
@@ -62,21 +84,78 @@ class PointerNet(tf.keras.models.Model):
 
         sub_preds = self.sub_classifier(input_lstm_value)
         if not training:
-            input_sub_span = tf.where(tf.greater(sub_preds, 0.5), 1.0, 0.0)
-            input_sub_span = input_sub_span[:,:,0] + input_sub_span[:,:,1]
-            input_sub_span = tf.where(tf.greater(input_sub_span, 0.0), 1.0, 0.0)
+            sub_preds = tf.transpose(sub_preds, perm=[0, 2, 1])
+            mask_value = tf.cast(tf.expand_dims(mask_value, 1), dtype=tf.int32)
+            sub_mask_value = tf.repeat(mask_value, 2, axis=1)
+            sub_value = tf.where(tf.greater(sub_preds, 0.5), 1, 0)
+            sub_value *= sub_mask_value
 
-        input_sub_span = tf.expand_dims(input_sub_span, axis=-1)
+            sub_value = sub_value.numpy()
+            batch_spo_list = []
+            predict_sub_num = 0
+            for b, s_pred in enumerate(sub_value):
+                spo_list = []
+                for j, sv in enumerate(s_pred[0]):
+                    if sv == 0:
+                        continue
+                    for k, pv in enumerate(s_pred[1]):
+                        if k < j:
+                            continue
+                        if pv == 0:
+                            continue
+                        # entity_list.append((j, k))
+                        predict_sub_num += 1
+                        sub_loc_start = tf.cast([[j]], dtype=tf.int32)
+                        sub_loc_end = tf.cast([[k]], dtype=tf.int32)
 
-        input_sub_feature = tf.multiply(input_lstm_value, input_sub_span)
-        input_po_feature = tf.concat([input_lstm_value, input_sub_feature], axis=-1)
+                        sub_start = seq_gather(input_lstm_value[b:b+1,:,:], sub_loc_start)
+                        sub_end = seq_gather(input_lstm_value[b:b+1,:,:], sub_loc_end)
+                        sub_start_end = tf.concat((sub_start, sub_end), axis=-1)
 
-        po_preds = self.po_classifier(input_po_feature)
+                        input_sub_feature = seq_and_vec(input_lstm_value[b:b+1,:,:], sub_start_end)
 
-        sub_preds = tf.transpose(sub_preds, perm=[0, 2, 1])
-        po_preds = tf.transpose(po_preds, perm=[0, 2, 1])
+                        input_po_feature = tf.concat([input_lstm_value[b:b+1,:,:], input_sub_feature], axis=-1)
 
-        return sub_preds, po_preds, mask_value
+                        po_preds = self.po_classifier(input_po_feature)
+                        po_preds = tf.transpose(po_preds, perm=[0, 2, 1])
+
+                        po_preds = tf.where(tf.greater(po_preds, 0.5), 1, 0)
+                        po_data_mask = tf.repeat(mask_value, 2 * self.predicate_num, axis=1)
+                        po_preds *= po_data_mask
+                        po_pred = po_preds.numpy()[0]
+
+                        for mi in range(self.predicate_num):
+                            po_s_array = po_pred[mi * 2]
+                            po_e_array = po_pred[mi * 2 + 1]
+
+                            for mj, pvs in enumerate(po_s_array):
+                                if pvs == 0:
+                                    continue
+                                for mk, pve in enumerate(po_e_array):
+                                    if mk < mj:
+                                        continue
+                                    if pve == 0:
+                                        continue
+                                    spo_list.append((j, k, mj, mk, mi))
+                batch_spo_list.append(spo_list)
+            print(predict_sub_num)
+            return batch_spo_list
+        else:
+            # print(input_sub_loc)
+            sub_start = seq_gather(input_lstm_value, input_sub_loc[:, 0:1])
+            sub_end = seq_gather(input_lstm_value, input_sub_loc[:, 1:2])
+            sub_start_end = tf.concat((sub_start, sub_end), axis=-1)
+
+            input_sub_feature = seq_and_vec(input_lstm_value, sub_start_end)
+
+            input_po_feature = tf.concat([input_lstm_value, input_sub_feature], axis=-1)
+
+            po_preds = self.po_classifier(input_po_feature)
+
+            sub_preds = tf.transpose(sub_preds, perm=[0, 2, 1])
+            po_preds = tf.transpose(po_preds, perm=[0, 2, 1])
+
+            return sub_preds, po_preds, mask_value
 
     # def predict(self, inputs):
         # input_embed = self.embed(inputs)
