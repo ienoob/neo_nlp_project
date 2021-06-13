@@ -101,7 +101,11 @@ class NeoBert(tf.keras.Model):
         position_value = tf.transpose(position_value, [1, 0])
         token_value = self.token_type_embed(input_token_type)
 
-        embed = embed_value + position_value + token_value
+        value = embed_value + position_value + token_value
+        for encoder_layer in self.encoder_layers:
+            value = encoder_layer(value, mask)
+        return value
+
 
 
 
