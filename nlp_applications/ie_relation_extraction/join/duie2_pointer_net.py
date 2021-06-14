@@ -15,7 +15,7 @@ data_loader = LoaderDuie2Dataset(data_path)
 # word_embed = load_word_vector(word_embed_path)
 # word_embed = {}
 
-batch_num = 10
+batch_num = 5
 vocab_size = len(data_loader.char2id)
 word_size = len(data_loader.word2id)
 predicate_num = len(data_loader.relation2id)
@@ -46,6 +46,10 @@ class DataIterator(object):
         sub_loc = (relation_random.sub.start, relation_random.sub.end-1)
         sub_span[relation_random.sub.start: relation_random.sub.end] = 1
         for relation in doc.relation_list:
+            sub = relation.sub
+            obj = relation.obj
+
+            evaluation_label.append((sub.start, sub.end - 1, obj.start, obj.end - 1, relation.id))
             sub_label[0][relation.sub.start] = 1
             sub_label[1][relation.sub.end - 1] = 1
             if relation.sub.start != relation_random.sub.start:
@@ -58,11 +62,6 @@ class DataIterator(object):
             obj_end = relation.obj.end - 1
             po_label[pre_type * 2][obj_start] = 1
             po_label[pre_type * 2 + 1][obj_end] = 1
-
-            sub = relation.sub
-            obj = relation.obj
-
-            evaluation_label.append((sub.start, sub.end-1, obj.start, obj.end-1, relation.id))
 
         return {"encoding": encoding,
                 "word_encode_id": word_encode_id,
@@ -168,8 +167,45 @@ class DataIterator(object):
             yield self.padding_batch_data(batch_data)
 
 
-def evaluation(batch_data, input_model):
+def check_sub(input_sub_value):
+    sub_list = []
+    for b, s_pred in enumerate(input_sub_value):
 
+        sub = []
+        for j, sv in enumerate(s_pred[0]):
+            if sv == 0:
+                continue
+            for k, pv in enumerate(s_pred[1]):
+                if k < j:
+                    continue
+                if pv == 0:
+                    continue
+                # entity_list.append((j, k))
+                sub.append((j, k))
+        sub_list.append(sub)
+    print("check_sub ", sub_list)
+
+
+def check_po(input_po_value):
+    spo_list = []
+    for mi in range(predicate_num):
+        po_s_array = input_po_value[mi * 2]
+        po_e_array = input_po_value[mi * 2 + 1]
+
+        for mj, pvs in enumerate(po_s_array):
+            if pvs == 0:
+                continue
+            for mk, pve in enumerate(po_e_array):
+                if mk < mj:
+                    continue
+                if pve == 0:
+                    continue
+                spo_list.append((mj, mk, mi))
+    print("check po ", spo_list)
+
+
+def evaluation(batch_data, input_model):
+    # check_sub(batch_data["sub_label"].numpy())
     predict_batch_spo = input_model(batch_data["encoding"], batch_data["word_encode_id"])
     real_batch_spo = batch_data["entity_relation_value"]
     hit_num = 0.0
@@ -177,6 +213,7 @@ def evaluation(batch_data, input_model):
     real_num = 0.0
 
     for b, spo_pred in enumerate(predict_batch_spo):
+        # check_po(batch_data["po_label"][b].numpy())
         true_res = real_batch_spo[b]
         real_num += len(true_res)
 
@@ -243,6 +280,7 @@ def evaluation(batch_data, input_model):
         "real_num": real_num
     }
 
+from tf2.python.custom_schedule import CustomSchedule
 
 def main():
     boundaries = [100000, 110000]
@@ -250,18 +288,36 @@ def main():
 
     lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(boundaries, values)
 
+    learing_rate = CustomSchedule(128*3)
+
     pm_model = PointerNet(vocab_size, embed_size, word_size, word_embed_size, lstm_size, predicate_num)
     data_iter = DataIterator(data_loader)
     #
 
-    optimizer = tf.keras.optimizers.Adam(lr_schedule)
-
+    optimizer = tf.keras.optimizers.Adam(learing_rate, beta_1=0.9,
+                                    beta_2=0.98, epsilon=1e-9)
 
     def loss_func(input_y, logits, input_mask):
         mask_logic = tf.math.logical_not(tf.math.equal(input_y, 0))
         mask = tf.where(mask_logic, 10.0, 1.0)
         mask *= tf.cast(input_mask, dtype=tf.float32)
-        loss_fun = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        # loss_fun = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        # input_y = tf.expand_dims(input_y, axis=-1)
+        # logits = tf.expand_dims(logits, axis=-1)
+        input_y = tf.cast(input_y, dtype=tf.float32)
+
+        input_y *= mask
+        logits *= mask
+        loss_va = tf.reduce_mean(tf.keras.losses.mse(input_y, logits))
+        # loss_va = loss_fun(input_y, logits, sample_weight=mask)
+
+        return loss_va
+
+    def loss_func_v2(input_y, logits, input_mask):
+        mask_logic = tf.math.logical_not(tf.math.equal(input_y, 0))
+        mask = tf.where(mask_logic, 20.0, 1.0)
+        mask *= tf.cast(input_mask, dtype=tf.float32)
+        loss_fun = tf.keras.losses.BinaryCrossentropy()
         input_y = tf.expand_dims(input_y, axis=-1)
         logits = tf.expand_dims(logits, axis=-1)
 
@@ -283,7 +339,7 @@ def main():
             # print(po_data_mask.shape, po_logits.shape)
             # sub_logits = sub_logits * tf.cast(sub_data_mask, dtype=tf.float32)
             # po_logits = po_logits * tf.cast(po_data_mask, dtype=tf.float32)
-            lossv = loss_func(input_sub_label, sub_logits, sub_data_mask) + loss_func(input_po_label, po_logits, po_data_mask)
+            lossv = 2.0*loss_func_v2(input_sub_label, sub_logits, sub_data_mask) + loss_func_v2(input_po_label, po_logits, po_data_mask)
             # print(lossv)
         variables = pm_model.variables
         gradients = tape.gradient(lossv, variables)

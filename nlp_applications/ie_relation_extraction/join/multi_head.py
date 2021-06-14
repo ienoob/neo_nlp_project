@@ -14,6 +14,7 @@
 
 """
 import tensorflow as tf
+from nlp_applications.ner.crf_addons import crf_log_likelihood, viterbi_decode
 
 
 class MultiHeaderModel(tf.keras.Model):
@@ -29,8 +30,7 @@ class MultiHeaderModel(tf.keras.Model):
         self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True))
 
         # self.emission = tf.keras.layers.Dense(entity_num)
-
-        self.crf = None
+        self.transition_params = tf.Variable(tf.random.uniform(shape=(entity_num, entity_num)))
         self.selection_u = tf.keras.layers.Dense(rel_embed_size)
         self.selection_v = tf.keras.layers.Dense(rel_embed_size)
         self.selection_uv = tf.keras.layers.Dense(rel_embed_size)
@@ -41,6 +41,7 @@ class MultiHeaderModel(tf.keras.Model):
 
     def call(self, char_ids, word_ids, entity_ids=None, data_max_len=None, training=None, mask=None):
         mask_value = tf.math.logical_not(tf.math.equal(char_ids, 0))
+        text_lens = tf.math.reduce_sum(tf.cast(tf.math.not_equal(char_ids, 0), dtype=tf.int32), axis=-1)
         char_embed = self.char_embed(char_ids)
         word_embed = self.word_embed(word_ids)
 
@@ -50,8 +51,15 @@ class MultiHeaderModel(tf.keras.Model):
         entity_logits = self.entity_classifier(sent_encoder)
         if training:
             ent_encoder = self.ent_embed(entity_ids)
+            label_sequences = tf.convert_to_tensor(entity_ids, dtype=tf.int32)
+            log_likelihood, self.transition_params = crf_log_likelihood(entity_logits, label_sequences, text_lens,
+                                                                        self.transition_params)
         else:
-            entity_ids = tf.argmax(entity_logits, axis=-1)
+            v_entity_ids = []
+            for logit, text_len in zip(entity_logits, text_lens):
+                viterbi_path, _ = viterbi_decode(logit[:text_len], self.transition_params)
+                v_entity_ids.append(viterbi_path)
+            entity_ids = tf.keras.preprocessing.sequence.pad_sequences(v_entity_ids, padding='post', dtype=tf.int32)
             ent_encoder = self.ent_embed(entity_ids)
 
         rel_encoder = tf.concat((sent_encoder, ent_encoder), axis=-1)

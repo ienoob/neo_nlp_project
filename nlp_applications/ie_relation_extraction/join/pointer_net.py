@@ -63,6 +63,7 @@ def seq_and_vec(seq, vec):
     return tf.concat([seq, vec], 2)
 
 
+
 class PointerNet(tf.keras.models.Model):
 
     def __init__(self, vocab_size, embed_size, word_size, word_embed_size, lstm_size, predicate_num):
@@ -72,6 +73,8 @@ class PointerNet(tf.keras.models.Model):
         self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size, return_sequences=True))
         self.sub_classifier = tf.keras.layers.Dense(2, activation="sigmoid")
         self.po_classifier = tf.keras.layers.Dense(predicate_num*2, activation="sigmoid")
+        self.normalizer = tf.keras.layers.LayerNormalization()
+        # self.dropout = tf.keras.layers.Dropout(0.5)
         self.predicate_num = predicate_num
 
     def call(self, inputs, word_ids, input_sub_loc=None, training=None, mask=None):
@@ -85,19 +88,40 @@ class PointerNet(tf.keras.models.Model):
         sub_preds = self.sub_classifier(input_lstm_value)
         if not training:
             sub_preds = tf.transpose(sub_preds, perm=[0, 2, 1])
-            mask_value = tf.cast(tf.expand_dims(mask_value, 1), dtype=tf.int32)
+            mask_value = tf.cast(tf.expand_dims(mask_value, 1), dtype=tf.float32)
             sub_mask_value = tf.repeat(mask_value, 2, axis=1)
-            sub_value = tf.where(tf.greater(sub_preds, 0.5), 1, 0)
-            sub_value *= sub_mask_value
+
+            # top_value = tf.math.top_k(sub_preds, 20)
+            # print(top_value.values[-1])
+
+
+            print(sub_preds.shape)
+            sub_value = tf.where(tf.greater(sub_preds, 0.5), 1.0, 0.0)
+            sub_value = sub_value * sub_mask_value
+
+            print(tf.reduce_max(sub_preds[:, 0, :]))
+            print(tf.reduce_max(sub_preds[:, 1, :]))
+            print(tf.reduce_sum(sub_value))
+            # print(tf.reduce_max(sub_value))
+            if tf.reduce_sum(sub_value).numpy() > 100:
+                sub_value = tf.where(tf.greater(sub_preds, 0.55), 1.0, 0.0)
+                sub_value *= sub_mask_value
+                print("new", tf.reduce_sum(sub_value))
 
             sub_value = sub_value.numpy()
             batch_spo_list = []
             predict_sub_num = 0
+
             for b, s_pred in enumerate(sub_value):
+
                 spo_list = []
+                # print(np.sum(s_pred[0]), b)
+                # print(np.sum(s_pred[1]), b)
                 for j, sv in enumerate(s_pred[0]):
+
                     if sv == 0:
                         continue
+
                     for k, pv in enumerate(s_pred[1]):
                         if k < j:
                             continue
@@ -112,19 +136,24 @@ class PointerNet(tf.keras.models.Model):
                         sub_end = seq_gather(input_lstm_value[b:b+1,:,:], sub_loc_end)
                         sub_start_end = tf.concat((sub_start, sub_end), axis=-1)
 
-                        input_sub_feature = seq_and_vec(input_lstm_value[b:b+1,:,:], sub_start_end)
-
-                        input_po_feature = tf.concat([input_lstm_value[b:b+1,:,:], input_sub_feature], axis=-1)
+                        input_po_feature = seq_and_vec(input_lstm_value[b:b+1,:,:], sub_start_end)
+                        input_po_feature = self.normalizer(input_po_feature)
+                        # input_po_feature = tf.concat([input_lstm_value[b:b+1,:,:], input_sub_feature], axis=-1)
 
                         po_preds = self.po_classifier(input_po_feature)
                         po_preds = tf.transpose(po_preds, perm=[0, 2, 1])
 
+                        # top_po_value = tf.math.top_k(po_preds, 10).values[-1]
                         po_preds = tf.where(tf.greater(po_preds, 0.5), 1, 0)
                         po_data_mask = tf.repeat(mask_value, 2 * self.predicate_num, axis=1)
+                        po_data_mask = tf.cast(po_data_mask, dtype=tf.int32)
+
                         po_preds *= po_data_mask
                         po_pred = po_preds.numpy()[0]
 
                         for mi in range(self.predicate_num):
+                            if mi == 0:
+                                continue
                             po_s_array = po_pred[mi * 2]
                             po_e_array = po_pred[mi * 2 + 1]
 
@@ -141,14 +170,13 @@ class PointerNet(tf.keras.models.Model):
             print(predict_sub_num)
             return batch_spo_list
         else:
-            # print(input_sub_loc)
+            # input_lstm_value = self.dropout(input_lstm_value)
             sub_start = seq_gather(input_lstm_value, input_sub_loc[:, 0:1])
             sub_end = seq_gather(input_lstm_value, input_sub_loc[:, 1:2])
             sub_start_end = tf.concat((sub_start, sub_end), axis=-1)
-
-            input_sub_feature = seq_and_vec(input_lstm_value, sub_start_end)
-
-            input_po_feature = tf.concat([input_lstm_value, input_sub_feature], axis=-1)
+            input_po_feature = seq_and_vec(input_lstm_value, sub_start_end)
+            input_po_feature = self.normalizer(input_po_feature)
+            # input_po_feature = tf.concat([input_lstm_value, input_sub_feature], axis=-1)
 
             po_preds = self.po_classifier(input_po_feature)
 
