@@ -61,14 +61,19 @@ class Tplink(tf.keras.Model):
         else:
             input_entity_value = tf.cast(tf.expand_dims(input_entity_label, axis=-1), dtype=tf.float32)
 
-        relation_uv = eh_uv * input_entity_value
+        # relation_uv = tf.reduce_max(tf.reduce_max(eh_uv * input_entity_value, axis=1), axis=1)
+        # relation_uv = tf.expand_dims(tf.expand_dims(relation_uv, 1))
+        # relation_uv = tf.repeat(relation_uv, L, axis=1)
+        # relation_uv = tf.repeat(relation_uv, L, axis=2)
+        # print(relation_uv.shape)
 
         hh_u = tf.expand_dims(self.h_h_u(lstm_encoder), axis=1)
         hh_u = tf.keras.activations.relu(tf.tile(hh_u, multiples=(1, L, 1, 1)))
         hh_v = tf.expand_dims(self.h_h_v(lstm_encoder), axis=2)
         hh_v = tf.keras.activations.relu(tf.tile(hh_v, multiples=(1, 1, L, 1)))
         hh_uv = self.h_h_uv(tf.concat((hh_u, hh_v), axis=-1))
-        hh_uv = tf.concat((relation_uv, hh_uv), axis=-1)
+        # hh_uv = tf.concat((relation_uv, hh_uv), axis=-1)
+        # hh_uv = hh_uv + relation_uv
 
         hh_logtis = self.h2h_relation(hh_uv)
 
@@ -77,7 +82,7 @@ class Tplink(tf.keras.Model):
         tt_v = tf.expand_dims(self.t_t_v(lstm_encoder), axis=2)
         tt_v = tf.keras.activations.relu(tf.tile(tt_v, multiples=(1, 1, L, 1)))
         tt_uv = self.t_t_uv(tf.concat((tt_u, tt_v), axis=-1))
-        tt_uv = tf.concat((relation_uv, tt_uv), axis=-1)
+        # tt_uv = tf.concat((relation_uv, tt_uv), axis=-1)
 
         tt_logtis = self.t2t_relation(tt_uv)
 

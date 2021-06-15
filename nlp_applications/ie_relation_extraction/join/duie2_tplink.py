@@ -59,8 +59,8 @@ class DataIter(BaseDataIterator):
 
             entity_label_data[sub.start][sub.end - 1] = 1
             entity_label_data[obj.start][obj.end - 1] = 1
-            entity_label_data[sub.end-1][sub.start] = 1
-            entity_label_data[obj.end-1][obj.start] = 1
+            # entity_label_data[sub.end-1][sub.start] = 1
+            # entity_label_data[obj.end-1][obj.start] = 1
 
             hh_label_data[sub.start][obj.start] = relation.id
             tt_label_data[sub.end-1][obj.end-1] = relation.id
@@ -76,7 +76,7 @@ class DataIter(BaseDataIterator):
             "entity_relation_value": entity_relation_value,
             "text_raw": text_raw,
             "mt_mask": mt_mask,
-            "mt_entity_mask": mt_mask
+            "mt_entity_mask": mt_entity_mask
         }
 
     def padding_batch_data(self, input_batch_data):
@@ -168,6 +168,7 @@ def evaluation(batch_data, model, t_batch_num):
                                                 batch_data["word_encode_id"],
                                                 None,
                                                 batch_data["max_len"])
+    print(tf.reduce_max(entity_logits))
     mt_mask = batch_data["mt_mask"].numpy()
     entity_argmax = tf.cast(tf.math.greater_equal(entity_logits, 0.5), dtype=tf.int32)
     b, l, l, v = entity_argmax.shape
@@ -189,8 +190,10 @@ def evaluation(batch_data, model, t_batch_num):
                     continue
                 if ei == 1:
                     entity_list.add((iv, jv))
+        print("entity", len(entity_list))
         hh_dict = dict()
         hh_rel_multi = hh_argmax[i]
+        print(tf.reduce_max(hh_rel_multi))
         for iv, hrow in enumerate(hh_rel_multi):
             for jv, ei in enumerate(hrow):
                 if ei == 0:
@@ -198,6 +201,7 @@ def evaluation(batch_data, model, t_batch_num):
                 hh_dict.setdefault(ei, [])
                 hh_dict[ei].append((iv, jv))
 
+        print(len(hh_dict))
         tt_dict = dict()
         tt_rel_multi = tt_argmax[i]
         for iv, trow in enumerate(tt_rel_multi):
@@ -206,6 +210,7 @@ def evaluation(batch_data, model, t_batch_num):
                     continue
                 tt_dict.setdefault(ei, [])
                 tt_dict[ei].append((iv, jv))
+        print(len(tt_dict))
 
         predict_extract = []
         for kr, h_list in hh_dict.items():
@@ -234,31 +239,42 @@ def evaluation(batch_data, model, t_batch_num):
 def main():
     model = Tplink(char_size, char_embed, word_size, word_embed, lstm_size, rel_num)
 
-    loss_func = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-    # loss_funv = tf.keras.losses.SparseCategoricalCrossentropy()
+    # loss_func = tf.keras.losses.BinaryCrossentropy()
+
+    def loss_func(input_true, input_logits, sample_weight=None):
+        cross_func = tf.keras.losses.BinaryCrossentropy()
+        mask = tf.math.logical_not(tf.math.equal(input_true, 0))
+        mask = tf.where(mask, 5.0, 1.0)
+        mask *= tf.cast(sample_weight, dtype=tf.float32)
+        # mask = tf.cast(mask, dtype=tf.int64)
+        input_true = tf.expand_dims(input_true, axis=-1)
+        input_logits = tf.expand_dims(input_logits, axis=-1)
+        lossv = cross_func(input_true, input_logits, sample_weight=mask)
+
+        return lossv
 
     def loss_funv(input_true, input_logits, sample_weight=None):
-        cross_func = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        cross_func = tf.keras.losses.SparseCategoricalCrossentropy()
         mask = tf.math.logical_not(tf.math.equal(input_true, 0))
-        mask = tf.where(mask, 0.8, 0.2)
+        mask = tf.where(mask, 10.0, 1.0)
         mask *= tf.cast(sample_weight, dtype=tf.float32)
         # mask = tf.cast(mask, dtype=tf.int64)
         lossv = cross_func(input_true, input_logits, sample_weight=mask)
 
         return lossv
 
-    optimizer = tf.keras.optimizers.Adam(0.001)
+    optimizer = tf.keras.optimizers.Adam()
 
     @tf.function(experimental_relax_shapes=True)
     def train_step(input_char_id, input_word_id, input_entity_label, input_hh_label, input_tt_label, input_max_len, input_mt_mask, input_emt_mask):
         with tf.GradientTape() as tape:
             entity_logits, hh_logits, tt_logits = model(input_char_id, input_word_id, input_entity_label, input_max_len, training=True)
-            input_entity_label = tf.expand_dims(input_entity_label, -1)
-            entity_logits = tf.expand_dims(entity_logits, -1)
+            # input_entity_label = tf.expand_dims(input_entity_label, -1)
+            # entity_logits = tf.expand_dims(entity_logits, -1)
             loss_v1 = loss_func(input_entity_label, entity_logits, sample_weight=input_emt_mask)
             loss_v2 = loss_funv(input_hh_label, hh_logits, sample_weight=input_mt_mask)
             loss_v3 = loss_funv(input_tt_label, tt_logits, sample_weight=input_mt_mask)
-            loss_v = loss_v1 + loss_v2 + loss_v3
+            loss_v = 2*loss_v1 + loss_v2 + loss_v3
 
             variables = model.variables
             gradients = tape.gradient(loss_v, variables)
