@@ -10,6 +10,7 @@
 import jieba
 import numpy as np
 import tensorflow as tf
+from nlp_applications.ie_relation_extraction.evaluation import eval_metrix
 from nlp_applications.data_loader import LoaderDuie2Dataset, Document, BaseDataIterator
 from nlp_applications.ie_relation_extraction.join.tplink import Tplink
 
@@ -299,9 +300,17 @@ def main():
                 print("epoch {0} batch {1} loss value {2}".format(ep, batch_i, loss_value))
                 print(evaluation(batch_data, model, batch_num))
 
+    eval_res = {
+        'hit_num': 0.0, 'real_count': 0.0, 'predict_count': 0.0
+    }
+    for batch_i, batch_data in enumerate(data_iter.dev_iter(batch_num)):
+        e_res = evaluation(batch_data, model, batch_num)
+        eval_res["hit_num"] += e_res["hit_num"]
+        eval_res["real_count"] += e_res["real_count"]
+        eval_res["predict_count"] += e_res["predict_count"]
 
-    # for batch_i, batch_data in enumerate(data_iter.dev_iter(batch_num)):
-    #     print(evaluation())
+    print(eval_metrix(eval_res["hit_num"], eval_res["real_count"], eval_res["predict_count"]))
+
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 import jieba
 import numpy as np
 import tensorflow as tf
+from nlp_applications.ie_relation_extraction.evaluation import eval_metrix
 from tensorflow.python.ops import math_ops
 from nlp_applications.data_loader import LoaderDuie2Dataset, Document
 from nlp_applications.utils import load_word_vector
@@ -347,7 +348,7 @@ def main():
 
         return lossv
 
-    epoch = 100
+    epoch = 10
     model_path = "D:\\tmp\\pointer_net_model\\model"
     for ep in range(epoch):
         for batch_i, b_data in enumerate(data_iter.train_iter(batch_num)):
@@ -357,13 +358,21 @@ def main():
             if batch_i % 100 == 0:
                 print("epoch {0} batch {1} loss value is {2}".format(ep, batch_i, loss_value))
                 print(evaluation(b_data, pm_model))
-                # pm_model.save_weights(model_path, save_format='tf')
+                pm_model.save_weights(model_path, save_format='tf')
 
-    # test_batch_num = 1
-    # batch_data_iter = data_iter.dev_iter(test_batch_num)
-    # for batch_data in batch_data_iter:
-    #
-    #     evaluation(batch_data, pm_model)
+    pm_model.load_weights(model_path)
+    test_batch_num = 10
+    final_res = {"hit_num": 0.0, "real_num": 0.0, "predict_num": 0.0}
+    batch_data_iter = data_iter.dev_iter(test_batch_num)
+    for batch_data in batch_data_iter:
+        e_res = evaluation(batch_data, pm_model)
+        print("eval => {}".format(e_res))
+        final_res["hit_num"] += e_res["hit_num"]
+        final_res["real_num"] += e_res["real_num"]
+        final_res["predict_num"] += e_res["predict_num"]
+
+    eval_res = eval_metrix(final_res["hit_num"], final_res["real_num"], final_res["predict_num"])
+    print(eval_res)
     # test_batch_num = 1
     # # pm_model.load_weights(model_path)
     # batch_data_iter = data_iter.dev_iter(test_batch_num)

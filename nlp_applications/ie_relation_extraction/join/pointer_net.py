@@ -144,7 +144,7 @@ class PointerNet(tf.keras.models.Model):
                         po_preds = tf.transpose(po_preds, perm=[0, 2, 1])
 
                         # top_po_value = tf.math.top_k(po_preds, 10).values[-1]
-                        po_preds = tf.where(tf.greater(po_preds, 0.5), 1, 0)
+                        po_preds = tf.where(tf.greater(po_preds, 0.6), 1, 0)
                         po_data_mask = tf.repeat(mask_value, 2 * self.predicate_num, axis=1)
                         po_data_mask = tf.cast(po_data_mask, dtype=tf.int32)
 
@@ -167,7 +167,7 @@ class PointerNet(tf.keras.models.Model):
                                         continue
                                     spo_list.append((j, k, mj, mk, mi))
                 batch_spo_list.append(spo_list)
-            print(predict_sub_num)
+            # print(predict_sub_num)
             return batch_spo_list
         else:
             # input_lstm_value = self.dropout(input_lstm_value)
