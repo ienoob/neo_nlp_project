@@ -26,13 +26,27 @@ event extract or event detect
 - Joint Extraction of Events and Entities within a Document Context
 - DBRNN: Jointly Extracting Event Triggers and Arguments by Dependency-Bridge RNN and Tensor-Based Argument Interaction
 - Jointly Multiple Events Extraction via Attention-based Graph Information Aggregation
-
+- DeepEventMine: end-to-end neural nested event extraction from biomedical texts
 
 ## 事件抽取的相关难点
 1）一段文本中存在多个事件，如何将事件以及事件的要素进行匹配
 2）文本很长，即如何解决篇章级别的事件抽取任务
     元素（argument）会很分散，一个事件中的元素会分布到多个句子中
     多种事件共存。一个文档中存在多个事件
+3) 如何构建joint 模式的事件模型
+
+实验结果
+
+数据集
+duee_v1.0  
+
+| 模型 |  recall | precision | f1-measure | 
+| --- | --- | --- | --- |
+| DeepEventMine | 0.0 | 0.0 | 0.0 |
+
+
+
+
     
     
 
