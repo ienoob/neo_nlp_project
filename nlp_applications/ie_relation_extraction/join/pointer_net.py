@@ -144,12 +144,14 @@ class PointerNet(tf.keras.models.Model):
                         po_preds = tf.transpose(po_preds, perm=[0, 2, 1])
 
                         # top_po_value = tf.math.top_k(po_preds, 10).values[-1]
-                        po_preds = tf.where(tf.greater(po_preds, 0.6), 1, 0)
+                        # po_preds = tf.where(tf.greater(po_preds, 0.6), 1, 0)
                         po_data_mask = tf.repeat(mask_value, 2 * self.predicate_num, axis=1)
-                        po_data_mask = tf.cast(po_data_mask, dtype=tf.int32)
+                        po_data_mask = tf.cast(po_data_mask, dtype=tf.float32)
 
                         po_preds *= po_data_mask
                         po_pred = po_preds.numpy()[0]
+
+                        po_pre_list = []
 
                         for mi in range(self.predicate_num):
                             if mi == 0:
@@ -158,14 +160,17 @@ class PointerNet(tf.keras.models.Model):
                             po_e_array = po_pred[mi * 2 + 1]
 
                             for mj, pvs in enumerate(po_s_array):
-                                if pvs == 0:
+                                if pvs < 0.6:
                                     continue
                                 for mk, pve in enumerate(po_e_array):
                                     if mk < mj:
                                         continue
-                                    if pve == 0:
+                                    if pve < 0.6:
                                         continue
-                                    spo_list.append((j, k, mj, mk, mi))
+                                    po_pre_list.append((mj, mk, mi, pvs, pve))
+                        po_pre_list.sort(key=lambda x: x[3]+x[4], reverse=True)
+                        for mj, mk, mi, _, _ in po_pre_list[:100]:
+                            spo_list.append((j, k, mj, mk, mi))
                 batch_spo_list.append(spo_list)
             # print(predict_sub_num)
             return batch_spo_list

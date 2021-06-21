@@ -316,7 +316,7 @@ def main():
 
     def loss_func_v2(input_y, logits, input_mask):
         mask_logic = tf.math.logical_not(tf.math.equal(input_y, 0))
-        mask = tf.where(mask_logic, 20.0, 1.0)
+        mask = tf.where(mask_logic, 5.0, 1.0)
         mask *= tf.cast(input_mask, dtype=tf.float32)
         loss_fun = tf.keras.losses.BinaryCrossentropy()
         input_y = tf.expand_dims(input_y, axis=-1)
@@ -350,17 +350,19 @@ def main():
 
     epoch = 10
     model_path = "D:\\tmp\\pointer_net_model\\model"
-    for ep in range(epoch):
-        for batch_i, b_data in enumerate(data_iter.train_iter(batch_num)):
-            loss_value = train_step(b_data["encoding"], b_data["word_encode_id"], b_data["sub_loc"],
-                                    b_data["sub_label"], b_data["po_label"])
-
-            if batch_i % 100 == 0:
-                print("epoch {0} batch {1} loss value is {2}".format(ep, batch_i, loss_value))
-                print(evaluation(b_data, pm_model))
-                pm_model.save_weights(model_path, save_format='tf')
-
     pm_model.load_weights(model_path)
+    #
+    # for ep in range(epoch):
+    #     for batch_i, b_data in enumerate(data_iter.train_iter(batch_num)):
+    #         loss_value = train_step(b_data["encoding"], b_data["word_encode_id"], b_data["sub_loc"],
+    #                                 b_data["sub_label"], b_data["po_label"])
+    #
+    #         if batch_i % 100 == 0:
+    #             print("epoch {0} batch {1} loss value is {2}".format(ep, batch_i, loss_value))
+    #             print(evaluation(b_data, pm_model))
+    #             pm_model.save_weights(model_path, save_format='tf')
+
+
     test_batch_num = 10
     final_res = {"hit_num": 0.0, "real_num": 0.0, "predict_num": 0.0}
     batch_data_iter = data_iter.dev_iter(test_batch_num)
@@ -374,7 +376,7 @@ def main():
     eval_res = eval_metrix(final_res["hit_num"], final_res["real_num"], final_res["predict_num"])
     print(eval_res)
     # test_batch_num = 1
-    # # pm_model.load_weights(model_path)
+    # pm_model.load_weights(model_path)
     # batch_data_iter = data_iter.dev_iter(test_batch_num)
     # submit_res = []
     # batch_i = 0
