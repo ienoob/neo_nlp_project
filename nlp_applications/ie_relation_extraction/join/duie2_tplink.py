@@ -14,7 +14,7 @@ from nlp_applications.ie_relation_extraction.evaluation import eval_metrix
 from nlp_applications.data_loader import LoaderDuie2Dataset, Document, BaseDataIterator
 from nlp_applications.ie_relation_extraction.join.tplink import Tplink
 
-data_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\关系抽取\\"
+data_path = "D:\data\关系抽取"
 data_loader = LoaderDuie2Dataset(data_path)
 triple_regularity = data_loader.triple_set
 
@@ -310,7 +310,6 @@ def main():
         eval_res["predict_count"] += e_res["predict_count"]
 
     print(eval_metrix(eval_res["hit_num"], eval_res["real_count"], eval_res["predict_count"]))
-
 
 
 if __name__ == "__main__":
