@@ -63,7 +63,6 @@ def seq_and_vec(seq, vec):
     return tf.concat([seq, vec], 2)
 
 
-
 class PointerNet(tf.keras.models.Model):
 
     def __init__(self, vocab_size, embed_size, word_size, word_embed_size, lstm_size, predicate_num):
