@@ -786,16 +786,21 @@ class LoaderBaiduDueeV1(object):
         self.argument_role2id = {
             "$unk$": 0
         }
+        self.event2argument = dict()
         role_enum = dict()
         for schema in schema_data:
             event_type = schema["event_type"]
             if event_type not in self.event2id:
                 self.event2id[event_type] = len(self.event2id)
+            event_argument = []
+
             for role in schema["role_list"]:
                 if role["role"] not in self.argument_role2id:
                     self.argument_role2id[role["role"]] = len(self.argument_role2id)
+                event_argument.append(role["role"])
                 if "enum_items" in role:
                     role_enum[role["role"]] = role["enum_items"]
+            self.event2argument[self.event2id[event_type]] = event_argument
 
         self.id2event = {v: k for k, v in self.event2id.items()}
         self.id2argument = {v: k for k, v in self.argument_role2id.items()}
@@ -804,7 +809,7 @@ class LoaderBaiduDueeV1(object):
         dev_path = data_path + "\\duee_dev.json\\duee_dev.json"
         test_path = data_path + "\\duee_test1.json\\duee_test1.json"
 
-        self.document = []
+        self.documents = []
         self.char2id = {
             "$pad$": 0,
             "$unk$": 1
@@ -837,7 +842,7 @@ class LoaderBaiduDueeV1(object):
                     argument = Argument(sub_arg_value, self.argument_role2id[sub_arg_role], sub_arg_role, sub_arg_index)
                     event.add_argument(argument)
                 sub_doc.add_event(event)
-            self.document.append(sub_doc)
+            self.documents.append(sub_doc)
 
         test_data = load_json_line_data(test_path)
         self.test_document = []
