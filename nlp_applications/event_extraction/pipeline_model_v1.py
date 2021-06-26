@@ -41,4 +41,4 @@ class EventArgument(tf.keras.Model):
         embed_value = self.embed(inputs)
         lstm_value = self.bi_lstm(embed_value, mask=mask)
         argument_logits = self.argument(lstm_value)
-        return argument_logits
+        return argument_logits, mask

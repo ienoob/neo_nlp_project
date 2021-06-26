@@ -34,6 +34,8 @@ event extract or event detect
     元素（argument）会很分散，一个事件中的元素会分布到多个句子中
     多种事件共存。一个文档中存在多个事件
 3) 如何构建joint 模式的事件模型
+4) 事件数据稀少，如何增量
+5) 
 
 实验结果
 
@@ -43,6 +45,7 @@ duee_v1.0
 | 模型 |  recall | precision | f1-measure | 
 | --- | --- | --- | --- |
 | DeepEventMine | 0.0 | 0.0 | 0.0 |
+| Pipeline | 0.0274 | 0.0298 | 0.0285 |
 
 
 
