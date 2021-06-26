@@ -41,5 +41,9 @@ msr data
 5) A Unified MRC Framework for Named Entity Recognition
 6) FLAT: Chinese NER Using Flat-Lattice Transformer
 7) Lex-BERT: Enhancing BERT based NER with lexicons
-
-
+8) TENER: Adapting Transformer Encoder for Named Entity Recognition
+9) Lattice LSTM -- Chinese NER Using Lattice LSTM.
+10) CNNR
+11) LGN
+12) PLT
+13) CGN 

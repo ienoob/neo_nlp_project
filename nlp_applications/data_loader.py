@@ -9,6 +9,7 @@
 """
 import json
 import jieba
+import numpy as np
 
 
 
@@ -844,6 +845,33 @@ class LoaderBaiduDueeV1(object):
                 sub_doc.add_event(event)
             self.documents.append(sub_doc)
 
+        dev_data = load_json_line_data(dev_path)
+        self.dev_documents = []
+        for i, sub_dev_data in enumerate(dev_data):
+            text = sub_dev_data["text"]
+            text_id = []
+
+            for char in text:
+                text_id.append(self.char2id.get(char, self.char2id["$unk$"]))
+
+            sub_doc = EventDocument(i, text, text_id)
+            for sub_event in sub_dev_data["event_list"]:
+                event_id = self.event2id[sub_event["event_type"]]
+                sub_trigger = sub_event["trigger"]
+                sub_trigger_start_index = sub_event["trigger_start_index"]
+
+                event = Event(event_id, sub_trigger, sub_trigger_start_index)
+
+                for sub_argument in sub_event["arguments"]:
+                    sub_arg_index = sub_argument["argument_start_index"]
+                    sub_arg_role = sub_argument["role"]
+                    sub_arg_value = sub_argument["argument"]
+
+                    argument = Argument(sub_arg_value, self.argument_role2id[sub_arg_role], sub_arg_role, sub_arg_index)
+                    event.add_argument(argument)
+                sub_doc.add_event(event)
+            self.dev_documents.append(sub_doc)
+
         test_data = load_json_line_data(test_path)
         self.test_document = []
         for i, sub_test_data in enumerate(test_data):
@@ -1074,6 +1102,7 @@ class BaseDataIterator(object):
 
     def __init__(self, input_loader):
         self.data_loader = input_loader
+        self.use_random = True
 
     def single_doc_processor(self, doc: Document):
         pass
@@ -1083,7 +1112,11 @@ class BaseDataIterator(object):
 
     def train_iter(self, input_batch_num):
         c_batch_data = []
-        for doc in self.data_loader.documents:
+        rg_idxs = np.arange(0, len(self.data_loader.documents))
+        np.random.shuffle(rg_idxs)
+        for doc_i in rg_idxs:
+            doc = self.data_loader.documents[doc_i]
+        # for doc in self.data_loader.documents:
             c_batch_data.append(self.single_doc_processor(doc))
             if len(c_batch_data) == input_batch_num:
                 yield self.padding_batch_data(c_batch_data)
