@@ -8,6 +8,8 @@
 
 """
 import os
+import sys
+
 import numpy as np
 import tensorflow as tf
 from nlp_applications.event_extraction.evaluation import extract_entity, eval_metrix
@@ -18,8 +20,12 @@ from nlp_applications.ner.crf_model import CRFNerModel, sent2features, sent2labe
 sample_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\句子级事件抽取\\"
 bd_data_loader = LoaderBaiduDueeV1(sample_path)
 event2argument_dict = bd_data_loader.event2argument
+argument_role2idv = bd_data_loader.argument_role2id
+argument_id2rolev = {v:k for k, v in argument_role2idv.items()}
 event_num = len(bd_data_loader.event2id)
 id2event = bd_data_loader.id2event
+
+print(sys.stdout.encoding)
 
 
 class DataIter(BaseDataIterator):
@@ -70,6 +76,7 @@ class DataIter(BaseDataIterator):
             rd_argument = []
             for arg in event.arguments:
                 rd_argument.append((arg.start, arg.start+len(arg.argument), arg.role))
+            rd_argument.sort(key=lambda x: x[0])
             event_value = (e_id, rd_argument)
             event_list.append(event_value)
 
@@ -134,7 +141,7 @@ class DataIterArgument(BaseDataIterator):
         rd_argument = np.zeros(len(text_id))
         for arg in rd_event.arguments:
             rd_argument[arg.start] = argument_role2id["B-"+arg.role]
-            for iv in range(arg.start+1, arg.start+len(arg.argument)-1):
+            for iv in range(arg.start+1, arg.start+len(arg.argument)):
                 rd_argument[iv] = argument_role2id["I-"+arg.role]
 
         return {
@@ -175,24 +182,33 @@ class DataIterArgument(BaseDataIterator):
         if c_batch_data:
             yield self.padding_batch_data(c_batch_data)
 
-    def argument_value(self, event_type, data="dev"):
+    def argument_value(self, event_type, data="train"):
         argument_text = []
         argument_label = []
 
         if data is "dev":
-            for doc in self.data_loader.dev_documents:
-                text = doc.text
-                argument = ["O" for _ in text]
-                for event in doc.event_list:
-                    if event != event_type:
-                        continue
-                    for arg in event.arguments:
-                        argument[arg.start] = "B-" + arg.role
-                        for iv in range(arg.start + 1, arg.start + len(arg.argument) - 1):
-                            argument[iv] = "I-" + arg.role
+            data_list = self.data_loader.dev_documents
+        else:
+            data_list = self.data_loader.documents
+        # argument_bio = self.event2argument_bio[event_type]
+        for doc in data_list:
+            text = doc.text
+            argument = ["O" for _ in text]
+            status = False
+
+            for event in doc.event_list:
+                if event.id != event_type:
+                    continue
+                status = True
+                for arg in event.arguments:
+                    argument[arg.start] = "B-{}".format(arg.role_id)
+                    for iv in range(arg.start + 1, arg.start + len(arg.argument)):
+                        argument[iv] = "I-{}".format(arg.role_id)
+            if status:
                 argument_text.append(text)
                 argument_label.append(argument)
 
+        print(event_type, len(argument_text), len(argument_label))
         return argument_text, argument_label
 
 
@@ -301,7 +317,8 @@ def crf_train():
         crf_model = CRFNerModel(is_save=True)
         crf_model.save_model = model_path
 
-        train_sentence, train_label = arg_data_iter.argument_value(event_i)
+        train_sentence, train_label = arg_data_iter.argument_value(event_i, data="train")
+        # print(train_sentence)
         X_train = [sent2features(s) for s in train_sentence]
         y_train = [sent2labels(s) for s in train_label]
 
@@ -353,6 +370,9 @@ def predict():
                 X_train = [sent2features(s) for s in [data["raw"]]]
                 argument_pred_bio = crf_md.predict_list(X_train)
                 arg_extract = extract_entity(argument_pred_bio[0])
+                # print(arg_extract, argument_id2rolev)
+                arg_extract = [(s, e, argument_id2rolev[int(v)]) for s, e, v in arg_extract]
+                # print(arg_extract)
             else:
                 argument_model_path = "D:\\tmp\\pipeline_model_v1\\argument_model_{}\\model".format(ei)
                 argument_model = argument_model_list[ei-1]

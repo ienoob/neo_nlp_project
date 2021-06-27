@@ -45,7 +45,7 @@ duee_v1.0
 | 模型 |  recall | precision | f1-measure | 
 | --- | --- | --- | --- |
 | DeepEventMine | 0.0 | 0.0 | 0.0 |
-| Pipeline | 0.0274 | 0.0298 | 0.0285 |
+| Pipeline |0.1960 | 0.2134 | 0.20436 |
 
 
 
