@@ -173,6 +173,8 @@ def evaluation(batch_data, model, t_batch_num):
     mt_mask = batch_data["mt_mask"].numpy()
     entity_argmax = tf.cast(tf.math.greater_equal(entity_logits, 0.5), dtype=tf.int32)
     b, l, l, v = entity_argmax.shape
+    if b < t_batch_num:
+        t_batch_num = b
     entity_argmax = tf.reshape(entity_argmax, [t_batch_num, l, l]).numpy() * mt_mask
     hh_argmax = tf.argmax(hh_logits, axis=-1).numpy()
     hh_argmax = hh_argmax * mt_mask
@@ -284,21 +286,26 @@ def main():
             optimizer.apply_gradients(zip(gradients, variables))
         return loss_v
 
+    model_path = "D:\\tmp\\tplink\model"
+    model.load_weights(model_path)
     data_iter = DataIter(data_loader)
-    epoch = 20
-    for ep in range(epoch):
-        for batch_i, batch_data in enumerate(data_iter.train_iter(batch_num)):
-            loss_value = train_step(batch_data["char_encode_id"],
-                                    batch_data["word_encode_id"],
-                                    batch_data["entity_label_data"],
-                                    batch_data["hh_label_data"],
-                                    batch_data["tt_label_data"],
-                                    batch_data["max_len"],
-                                    batch_data["mt_mask"],
-                                    batch_data["mt_entity_mask"])
-            if batch_i % 100 == 0:
-                print("epoch {0} batch {1} loss value {2}".format(ep, batch_i, loss_value))
-                print(evaluation(batch_data, model, batch_num))
+    # epoch = 10
+    # for ep in range(epoch):
+    #     for batch_i, batch_data in enumerate(data_iter.train_iter(batch_num)):
+    #         loss_value = train_step(batch_data["char_encode_id"],
+    #                                 batch_data["word_encode_id"],
+    #                                 batch_data["entity_label_data"],
+    #                                 batch_data["hh_label_data"],
+    #                                 batch_data["tt_label_data"],
+    #                                 batch_data["max_len"],
+    #                                 batch_data["mt_mask"],
+    #                                 batch_data["mt_entity_mask"])
+    #         if batch_i % 100 == 0:
+    #             print("epoch {0} batch {1} loss value {2}".format(ep, batch_i, loss_value))
+    #             print(evaluation(batch_data, model, batch_num))
+    #             model.save_weights(model_path, save_format='tf')
+
+
 
     eval_res = {
         'hit_num': 0.0, 'real_count': 0.0, 'predict_count': 0.0
