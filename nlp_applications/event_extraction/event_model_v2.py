@@ -5,20 +5,8 @@ import tensorflow as tf
 from nlp_applications.data_loader import LoaderBaiduDueeV1, EventDocument, Event, Argument
 
 """
-    失败的树状输出
+    失败的树状输出,但是可以利用mask 来实现，不同event 和 argument 对应
 """
-
-
-sample_path = "D:\\data\\句子级事件抽取\\"
-bd_data_loader = LoaderBaiduDueeV1(sample_path)
-
-vocab_size = len(bd_data_loader.char2id)
-embed_size = 64
-lstm_size = 64
-event_num = len(bd_data_loader.event2id)
-batch_num = 10
-argument_num = len(bd_data_loader.argument_role2id)
-
 
 
 def seq_and_vec(seq, vec):
@@ -33,31 +21,51 @@ def seq_and_vec(seq, vec):
 
 class EventModelV2(tf.keras.Model):
 
-    def __init__(self, char_size, char_embed, lstm_size, event_class, event_embed_size, event2argument):
+    def __init__(self, char_size, char_embed, lstm_size, event_class, event_embed_size, event_argument_num, event2argument_mask):
         super(EventModelV2, self).__init__()
         self.embed = tf.keras.layers.Embedding(char_size, char_embed)
         self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size, return_sequences=True))
         self.event_embed = tf.keras.layers.Embedding(event_class, event_embed_size)
         self.event_type = tf.keras.layers.Dense(event_class, activation="sigmoid")
-        self.event_arguments = [tf.keras.layers.Dense(len(event2argument[i])) for i in range(event_class) if i]
+        self.event_arguments = tf.keras.layers.Dense(event_argument_num)
+        self.event2argument_mask = event2argument_mask
 
-    def call(self, inputs, input_event_type, training=None, mask=None):
+    def call(self, inputs, input_event_type=None, input_evnet_type_mask=None, training=None, mask=None):
         mask = tf.logical_not(tf.equal(inputs, 0))
         embed = self.embed(inputs)
         bi_lstm_value = self.bi_lstm(embed, mask=mask)
         event_logits = self.event_type(bi_lstm_value[:, -1, :])
-        event_embed_value = self.event_embed(input_event_type)
-        event_feature = seq_and_vec(bi_lstm_value, event_embed_value[:, 0, :])
+        if training:
+            event_embed_value = self.event_embed(input_event_type)
+            event_feature = seq_and_vec(bi_lstm_value, event_embed_value[:, 0, :])
 
-        event_arguments_logits = []
-        batch_num_v = inputs.shape[0]
-        # print(input_event_type)
-        for b in range(batch_num_v):
-            print(input_event_type[b])
-            event_arguments_logits.append(self.event_arguments[input_event_type[b][0]](event_feature))
-        event_arguments_logits = tf.cast(event_arguments_logits, dtype=tf.float32)
+            event_arguments_logits = self.event_arguments(event_feature)
+            event_arguments_logits += input_evnet_type_mask
+            event_arguments_logits = tf.keras.activations.softmax(event_arguments_logits, axis=-1)
 
-        return event_logits, event_arguments_logits, mask
+            return event_logits, event_arguments_logits, mask
+        else:
+            batch_res = []
+            for b, row_value in enumerate(event_logits):
+                row_res = []
+                for e_id, e_value in enumerate(row_value):
+                    if e_value < 0.5:
+                        continue
+                    if e_id == 0:
+                        continue
+                    e_id_input = tf.cast([[e_id]], dtype=tf.int32)
+                    event_embed_value = self.event_embed(e_id_input)
+                    event_feature = seq_and_vec(bi_lstm_value[b:b+1,:,:], event_embed_value[:, 0, :])
+                    event_arguments_logits = self.event_arguments(event_feature)
+                    input_evnet_type_mask = self.event2argument_mask[e_id]
+                    event_arguments_logits += tf.cast([input_evnet_type_mask], dtype=tf.float32)
+                    event_arguments_logits = tf.keras.activations.softmax(event_arguments_logits, axis=-1)
+                    event_arguments_argmax = tf.argmax(event_arguments_logits, axis=-1)[0]
+                    row_res.append((e_id, event_arguments_argmax.numpy()))
+                batch_res.append(row_res)
+            return batch_res
+
+
 
 
 
