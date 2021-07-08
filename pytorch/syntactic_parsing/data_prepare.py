@@ -35,6 +35,7 @@ for sentence in generator_sentence():
 outp1 = "word2vec.model"
 outp2 = "word2vec.json"
 model = Word2Vec(sentences=sentence_list, size=100, window=5, min_count=1, workers=multiprocessing.cpu_count())
+model.train(sentences=sentence_list, total_words=len(model.wv.vocab), epochs=10)
 model.save(outp1)
 # vector = model.wv
 # import json

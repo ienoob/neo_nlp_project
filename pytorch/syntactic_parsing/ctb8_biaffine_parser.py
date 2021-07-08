@@ -203,6 +203,7 @@ def compute_loss(model, true_arcs, true_rels, arc_logits, rel_logits, lengths):
 
     return loss
 
+
 class Dependency:
     def __init__(self, id, form, tag, head, rel):
         self.id = id
@@ -298,6 +299,28 @@ def load_pretrain_embbeding():
 
     return pretrain_embed
 
+class Optimizer:
+    def __init__(self, parameter, config):
+        self.optim = torch.optim.Adam(parameter, lr=config.learning_rate, betas=(config.beta_1, config.beta_2),
+                                      eps=config.epsilon)
+        decay, decay_step = config.decay, config.decay_steps
+        l = lambda epoch: decay ** (epoch // decay_step)
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optim, lr_lambda=l)
+
+    def step(self):
+        self.optim.step()
+        self.schedule()
+        self.optim.zero_grad()
+
+    def schedule(self):
+        self.scheduler.step()
+
+    def zero_grad(self):
+        self.optim.zero_grad()
+
+    @property
+    def lr(self):
+        return self.scheduler.get_lr()
 
 
 
@@ -318,7 +341,14 @@ def train():
     parser.add_argument("--mlp_rel_size", type=int, default=100, required=False)
     parser.add_argument("--dropout_mlp", type=float, default=0.33, required=False)
     parser.add_argument("--update_every", type=int, default=4, required=False)
-    parser.add_argument("--test_batch_size", type=int, default=5, required=False)
+    parser.add_argument("--test_batch_size", type=int, default=50, required=False)
+    parser.add_argument("--train_batch_size", type=int, default=50, required=False)
+    parser.add_argument("--learning_rate", type=float, default=2e-3, required=False)
+    parser.add_argument("--beta_1", type=float, default=.9, required=False)
+    parser.add_argument("--beta_2", type=float, default=.9, required=False)
+    parser.add_argument("--decay", type=float, default=.75, required=False)
+    parser.add_argument("--decay_steps", type=int, default=5000, required=False)
+    parser.add_argument("--epsilon", type=float, default=1e-12, required=False)
 
     config = parser.parse_args()
 
@@ -326,29 +356,46 @@ def train():
     print(pretrain_embed.shape)
     model = BiaffineParser(config, pretrain_embed)
 
-    parameters = filter(lambda p: p.requires_grad, model.parameters())
-    optimizer = optim.Adamax(parameters)
+    # parameters = filter(lambda p: p.requires_grad, model.parameters())
+    # optimizer = optim.Adamax(parameters)
+    optimizer = Optimizer(filter(lambda p: p.requires_grad, model.parameters()), config)
 
+    global_step = 0
+    for epoch in range(100):
+        start_time = time.time()
+        print('epoch: ' + str(epoch))
+        overall_arc_correct, overall_label_correct, overall_total_arcs = 0, 0, 0
+        for batch_iter, one_batch in enumerate(data_iter(config.train_batch_size)):
+            global_step += 1
+            words, extwords, tags, heads, rels, lengths, masks = \
+                batch_data_variable(one_batch, None)
+            model.train()
+            arc_logit, rel_logit_cond = model.forward(words, extwords, tags, masks)
+            loss = compute_loss(model, heads, rels, arc_logit, rel_logit_cond, lengths)
+            loss = loss / config.update_every
+            loss_value = loss.data.cpu().numpy()
 
-    for one_batch in data_iter(5):
-        words, extwords, tags, heads, rels, lengths, masks = \
-            batch_data_variable(one_batch, None)
-        model.train()
-        arc_logit, rel_logit_cond = model.forward(words, extwords, tags, masks)
-        loss = compute_loss(model, heads, rels, arc_logit, rel_logit_cond, lengths)
-        loss = loss / config.update_every
-        loss_value = loss.data.cpu().numpy()
+            # print(loss_value)
+            loss.backward()
 
-        print(loss_value)
-        loss.backward()
+            arc_correct, label_correct, total_arcs = model.compute_accuracy(heads, rels, arc_logit, rel_logit_cond)
+            overall_arc_correct += arc_correct
+            overall_label_correct += label_correct
+            overall_total_arcs += total_arcs
+            uas = overall_arc_correct * 100.0 / overall_total_arcs
+            las = overall_label_correct * 100.0 / overall_total_arcs
+            during_time = float(time.time() - start_time)
+            print("Step:%d, ARC:%.2f, REL:%.2f, Iter:%d, batch:%d, length:%d,time:%.2f, loss:%.2f" \
+                  % (global_step, uas, las, epoch, batch_iter, overall_total_arcs, during_time, loss_value))
 
-        optimizer.step()
-        model.zero_grad()
+            optimizer.step()
+            model.zero_grad()
 
-        arc_correct, rel_correct, arc_total, dev_uas, dev_las = \
-            evaluate(model, config)
-        print("Dev: uas = %d/%d = %.2f, las = %d/%d =%.2f" % \
-              (arc_correct, arc_total, dev_uas, rel_correct, arc_total, dev_las))
+            if batch_iter % 100 == 0:
+                arc_correct, rel_correct, arc_total, dev_uas, dev_las = \
+                    evaluate(model, config)
+                print("Dev: uas = %d/%d = %.2f, las = %d/%d =%.2f" % \
+                      (arc_correct, arc_total, dev_uas, rel_correct, arc_total, dev_las))
 
 
 if __name__ == "__main__":

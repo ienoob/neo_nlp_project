@@ -6,6 +6,7 @@ import numpy as np
 import torch.nn as nn
 from collections import defaultdict
 from torch.autograd import Variable
+from transformers import BertTokenizer
 from pytorch.syntactic_parsing.parser_layer import MyLSTM, NonLinear, Biaffine
 
 
@@ -230,6 +231,22 @@ def drop_sequence_sharedmask(inputs, dropout, batch_first=True):
 
     return inputs.transpose(1, 0)
 
+def pad_sequence(xs, length=None, padding=-1, dtype=np.float64):
+    lengths = [len(x) for x in xs]
+    if length is None:
+        length = max(lengths)
+    y = np.array([np.pad(x.astype(dtype), (0, length - l),
+                         mode="constant", constant_values=padding)
+                  for x, l in zip(xs, lengths)])
+    return torch.from_numpy(y)
+
+def _model_var(model, x):
+    p = next(filter(lambda p: p.requires_grad, model.parameters()))
+    if p.is_cuda:
+        x = x.cuda(p.get_device())
+    return torch.autograd.Variable(x)
+
+
 
 class BiaffineParser(nn.Module):
 
@@ -248,7 +265,7 @@ class BiaffineParser(nn.Module):
         self.tag_embed.weight.data.copy_(torch.from_numpy(tag_init))
 
         self.extword_embed.weight.data.copy_(torch.from_numpy(pretrained_embedding))
-        self.extword_embed.weight.requires_grad = False
+        # self.extword_embed.weight.requires_grad = False
 
         self.lstm = MyLSTM(
             input_size=config.word_dims + config.tag_dims,
@@ -336,3 +353,33 @@ class BiaffineParser(nn.Module):
             rels_batch.append(rel_pred)
 
         return arcs_batch, rels_batch
+
+    def compute_accuracy(self, true_arcs, true_rels, arc_logits, rel_logits):
+        b, l1, l2 = arc_logits.size()
+        pred_arcs = arc_logits.data.max(2)[1].cpu()
+        index_true_arcs = pad_sequence(true_arcs, padding=-1, dtype=np.int64)
+        true_arcs = pad_sequence(true_arcs, padding=-1, dtype=np.int64)
+        arc_correct = pred_arcs.eq(true_arcs).cpu().sum()
+
+
+        size = rel_logits.size()
+        output_logits = _model_var(self, torch.zeros(size[0], size[1], size[3]))
+
+        for batch_index, (logits, arcs) in enumerate(zip(rel_logits, index_true_arcs)):
+            rel_probs = []
+            for i in range(l1):
+                rel_probs.append(logits[i][arcs[i]])
+            rel_probs = torch.stack(rel_probs, dim=0)
+            output_logits[batch_index] = torch.squeeze(rel_probs, dim=1)
+
+        pred_rels = output_logits.data.max(2)[1].cpu()
+        true_rels = pad_sequence(true_rels, padding=-1, dtype=np.int64)
+        label_correct = pred_rels.eq(true_rels).cpu().sum()
+
+        total_arcs = b * l1 - np.sum(true_arcs.cpu().numpy() == -1)
+
+        return arc_correct, label_correct, total_arcs
+
+# bert_model_name = "bert-base-chinese"
+# tokenizer = BertTokenizer.from_pretrained(bert_model_name)
+# print(tokenizer.vocab)
