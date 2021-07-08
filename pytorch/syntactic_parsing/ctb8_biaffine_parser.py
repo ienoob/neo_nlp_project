@@ -8,6 +8,7 @@ import numpy as np
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torch.optim as optim
+from gensim.models import Word2Vec
 from pytorch.syntactic_parsing.parser import BiaffineParser
 
 
@@ -288,6 +289,17 @@ def evaluate(model, config):
     return arc_correct_test, rel_correct_test, arc_total_test, uas, las
 
 
+def load_pretrain_embbeding():
+    pretrain_embed = np.zeros((len(extword2id), 100))
+    model = Word2Vec.load('word2vec.model')
+    for word in model.wv.vocab:
+        word_id = extword2id[word]
+        pretrain_embed[word_id] = model.wv[word]
+
+    return pretrain_embed
+
+
+
 
 def train():
     parser = argparse.ArgumentParser(description="")
@@ -310,7 +322,9 @@ def train():
 
     config = parser.parse_args()
 
-    model = BiaffineParser(config)
+    pretrain_embed = load_pretrain_embbeding()
+    print(pretrain_embed.shape)
+    model = BiaffineParser(config, pretrain_embed)
 
     parameters = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = optim.Adamax(parameters)
@@ -335,7 +349,6 @@ def train():
             evaluate(model, config)
         print("Dev: uas = %d/%d = %.2f, las = %d/%d =%.2f" % \
               (arc_correct, arc_total, dev_uas, rel_correct, arc_total, dev_las))
-
 
 
 if __name__ == "__main__":

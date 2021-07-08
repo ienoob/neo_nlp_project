@@ -233,13 +233,22 @@ def drop_sequence_sharedmask(inputs, dropout, batch_first=True):
 
 class BiaffineParser(nn.Module):
 
-    def __init__(self, config):
+    def __init__(self, config, pretrained_embedding):
         super(BiaffineParser, self).__init__()
         self.root = 2
         self.config = config
         self.word_embed = nn.Embedding(config.vocab_size, config.word_dims, padding_idx=0)
         self.extword_embed = nn.Embedding(config.extvocab_size, config.word_dims, padding_idx=0)
         self.tag_embed = nn.Embedding(config.tag_size, config.tag_dims, padding_idx=0)
+
+        word_init = np.zeros((config.vocab_size, config.word_dims), dtype=np.float32)
+        self.word_embed.weight.data.copy_(torch.from_numpy(word_init))
+
+        tag_init = np.random.randn(config.tag_size, config.tag_dims).astype(np.float32)
+        self.tag_embed.weight.data.copy_(torch.from_numpy(tag_init))
+
+        self.extword_embed.weight.data.copy_(torch.from_numpy(pretrained_embedding))
+        self.extword_embed.weight.requires_grad = False
 
         self.lstm = MyLSTM(
             input_size=config.word_dims + config.tag_dims,
