@@ -15,15 +15,20 @@ bio 序列标注模型
 7) pointer_network  
 8) globalPointer[4]
 9) mrc model [5]
+10) tener [8]
+11) lattice lstm [9]
 
 msr data
+实体类别有：AGE， ANGLE， AREA， CAPACTITY， B-DATE， DECIMAL， DURATION， FRACTION， FREQUENCY， B-INTEGER， 
+          LENGTH， LOCATION， MEASURE， MONEY， ORDINAL， ORGANIZATION， PERCENT， PERSON， PHONE， 
+           B-POSTALCODE， B-RATE， B-SPEED， TEMPERATURE， TIME， WEIGHT， WWW
 
 | 方法 | recall | precision | f1-value |
 | ---- | -------| ---------| -------- |
 | hmm | 0       |  0       |     0    |
 | crf  | 0.7202 |  0.8038  |      0.7597   |
-| bi-lstm | 0.6139 | 0.7107 |    0    |
-| bi-lstm+crf | 0.6960 | 0.8118 |  0  |
+| bi-lstm | 0.6139 | 0.7107 |    0.6588    |
+| bi-lstm+crf | 0.6960 | 0.8118 |  0.7495 |
 | bi-lstm+crf+word | 0.7643 | 0.8052 |  0.7842 |
 | seq2seq | 0.0370 | 0.1855 | 0.0617 |
 | pointer_net | 0.5948 | 0.8287 |  0.6926 | 
@@ -47,3 +52,4 @@ msr data
 11) LGN
 12) PLT
 13) CGN 
+
