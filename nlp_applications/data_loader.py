@@ -588,6 +588,7 @@ class LoaderDuie2Dataset(object):
                 if tt not in self.char2id:
                     self.char2id[tt] = len(self.char2id)
                 train_text_id.append(self.char2id[tt])
+                # train_text_id.append(self.char2id.get(tt, self.char2id["<unk>"]))
 
             for tword in jieba.cut(train_text):
                 if tword not in self.word2id:
@@ -1064,7 +1065,6 @@ class LoaderDuReaderChecklist(object):
 
         train_data = json.load(open(self.train_path, encoding="utf-8"))
         train_data_list = train_data["data"][0]["paragraphs"]
-
 
         self.char2id = {"pad": 0, "unk": 1}
         self.documents = []
