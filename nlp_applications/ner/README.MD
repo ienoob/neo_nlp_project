@@ -32,7 +32,7 @@ msr data
 | bi-lstm+crf+word | 0.7643 | 0.8052 |  0.7842 |
 | seq2seq | 0.0370 | 0.1855 | 0.0617 |
 | pointer_net | 0.5948 | 0.8287 |  0.6926 | 
-| 
+| bert + crf(pytorch) | 0.8408 | 0.8735 | 0.8568 |
 
 ## 相关提高方法
 1) word-level feature
