@@ -8,6 +8,15 @@
 3) interaction_layer， 各种attention机制花式结合问题和文章进行交互，在原文中得到query  aware 的文章表示  
 4) answer layer， 用query-aware的文章表示来预测答案，一般用两个网络分别预测答案的起始位置和终止位置
 
+## 模型
+1) attentive reader  
+2) stanford attentive reader  
+3) match lstm  
+4) BiDAF  
+5) R-Net  
+6) QANet
+7) BERT
+
 ## 实验
 
 | 方法 | precision | recall | f1-score | em | rouge-l | bleu |
