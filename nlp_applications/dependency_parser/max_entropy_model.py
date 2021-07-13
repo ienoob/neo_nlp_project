@@ -47,7 +47,7 @@ class MaxEntropyModel(object):
 
     def get_ep(self):
 
-        ep = np.zeros(self.f_func_num)
+        ep = np.ones(self.f_func_num)*1e-10
 
         for row_x in self.train_x:
             py_x = self.calc_py_x_row(row_x)
@@ -57,7 +57,10 @@ class MaxEntropyModel(object):
                 x_key = "{}-{}".format(iv, row_x[iv])
                 for y_indx, y_value in enumerate(self.class_value):
                     # print(self.feature_x_dict[x_key])
-                    ep[iv] += self.feature_x_dict[x_key] * py_x[y_indx] /self.data_num
+                    f_key = "{0}-{1}-{2}".format(iv, row_x[iv], y_value)
+                    if f_key in self.f_func2id:
+                        f_id = self.f_func2id[f_key]
+                        ep[f_id] += self.feature_x_dict[x_key] * py_x[y_indx] / self.data_num
 
         return ep
 
@@ -141,11 +144,11 @@ if __name__ == '__main__':
 
     # 获取训练集及标签
     print('start read transSet')
-    trainData, trainLabel = loadData('D:\data\\\Mnist\mnist_train.csv')
+    trainData, trainLabel = loadData('D:\data\\transMnist\Mnist\\mnist_train.csv')
 
     # 获取测试集及标签
     print('start read testSet')
-    testData, testLabel = loadData('D:\data\\\Mnist\mnist_test.csv')
+    testData, testLabel = loadData('D:\data\\transMnist\Mnist\\mnist_test.csv')
 
     max_ent = MaxEntropyModel(trainData[:20000], trainLabel[:20000])
     max_ent.train(10)
