@@ -93,19 +93,18 @@ class PointerNet(tf.keras.models.Model):
             # top_value = tf.math.top_k(sub_preds, 20)
             # print(top_value.values[-1])
 
-
             print(sub_preds.shape)
-            sub_value = tf.where(tf.greater(sub_preds, 0.5), 1.0, 0.0)
+            sub_value = tf.where(tf.greater(sub_preds, 0.6), 1.0, 0.0)
             sub_value = sub_value * sub_mask_value
 
-            print(tf.reduce_max(sub_preds[:, 0, :]))
-            print(tf.reduce_max(sub_preds[:, 1, :]))
-            print(tf.reduce_sum(sub_value))
+            # print(tf.reduce_max(sub_preds[:, 0, :]))
+            # print(tf.reduce_max(sub_preds[:, 1, :]))
+            # print(tf.reduce_sum(sub_value))
             # print(tf.reduce_max(sub_value))
-            if tf.reduce_sum(sub_value).numpy() > 100:
-                sub_value = tf.where(tf.greater(sub_preds, 0.55), 1.0, 0.0)
-                sub_value *= sub_mask_value
-                print("new", tf.reduce_sum(sub_value))
+            # if tf.reduce_sum(sub_value).numpy() > 100:
+            #     sub_value = tf.where(tf.greater(sub_preds, 0.55), 1.0, 0.0)
+            #     sub_value *= sub_mask_value
+            #     print("new", tf.reduce_sum(sub_value))
 
             sub_value = sub_value.numpy()
             batch_spo_list = []
@@ -168,7 +167,7 @@ class PointerNet(tf.keras.models.Model):
                                         continue
                                     po_pre_list.append((mj, mk, mi, pvs, pve))
                         po_pre_list.sort(key=lambda x: x[3]+x[4], reverse=True)
-                        for mj, mk, mi, _, _ in po_pre_list[:100]:
+                        for mj, mk, mi, _, _ in po_pre_list[:10]:
                             spo_list.append((j, k, mj, mk, mi))
                 batch_spo_list.append(spo_list)
             # print(predict_sub_num)
