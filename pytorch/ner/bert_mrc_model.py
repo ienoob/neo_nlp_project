@@ -3,6 +3,7 @@
 # Copyright (c) ***
 """
     A Unified MRC Framework for Named Entity Recognition
+    github https://github.com/ShannonAI/mrc-for-flat-nested-ner
 """
 import os
 import torch
@@ -46,6 +47,7 @@ class MultiNonLinearClassifier(nn.Module):
         features_output1 = self.dropout(features_output1)
         features_output2 = self.classifier2(features_output1)
         return features_output2
+
 
 class BertQueryNer(BertPreTrainedModel):
 
@@ -135,6 +137,45 @@ def compute_loss(start_logits, end_logits, span_logits,
 
     return start_loss, end_loss, match_loss
 
+
+def query_span_f1(start_preds, end_preds, match_logits, start_label_mask, end_label_mask, match_labels, flat=False):
+    """
+    Compute span f1 according to query-based model output
+    Args:
+        start_preds: [bsz, seq_len]
+        end_preds: [bsz, seq_len]
+        match_logits: [bsz, seq_len, seq_len]
+        start_label_mask: [bsz, seq_len]
+        end_label_mask: [bsz, seq_len]
+        match_labels: [bsz, seq_len, seq_len]
+        flat: if True, decode as flat-ner
+    Returns:
+        span-f1 counts, tensor of shape [3]: tp, fp, fn
+    """
+    start_label_mask = start_label_mask.bool()
+    end_label_mask = end_label_mask.bool()
+    match_labels = match_labels.bool()
+    bsz, seq_len = start_label_mask.size()
+    # [bsz, seq_len, seq_len]
+    match_preds = match_logits > 0
+    # [bsz, seq_len]
+    start_preds = start_preds.bool()
+    # [bsz, seq_len]
+    end_preds = end_preds.bool()
+
+    match_preds = (match_preds
+                   & start_preds.unsqueeze(-1).expand(-1, -1, seq_len)
+                   & end_preds.unsqueeze(1).expand(-1, seq_len, -1))
+    match_label_mask = (start_label_mask.unsqueeze(-1).expand(-1, -1, seq_len)
+                        & end_label_mask.unsqueeze(1).expand(-1, seq_len, -1))
+    match_label_mask = torch.triu(match_label_mask, 0)  # start should be less or equal to end
+    match_preds = match_label_mask & match_preds
+
+    tp = (match_labels & match_preds).long().sum()
+    fp = (~match_labels & match_preds).long().sum()
+    fn = (match_labels & ~match_preds).long().sum()
+    return torch.stack([tp, fp, fn])
+
 if __name__ == "__main__":
     bert_model_name = "bert-base-chinese"
     bert_path = "D:\data\\bert\\bert-base-chinese"
@@ -147,7 +188,7 @@ if __name__ == "__main__":
     dataset = MRCNERDataset(json_path=json_path, tokenizer=tokenizer,  max_length=512,
                             is_chinese=is_chinese, pad_to_maxlen=False)
 
-    dataloader = DataLoader(dataset, batch_size=32, num_workers=1,
+    dataloader = DataLoader(dataset, batch_size=8, num_workers=1,
                             collate_fn=collate_to_max_length)
 
     bert_config = BertQueryNerConfig.from_pretrained(bert_model_name,
@@ -157,13 +198,17 @@ if __name__ == "__main__":
 
     model = BertQueryNer.from_pretrained(bert_model_name, config=bert_config)
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=5.0)
+    optimizer = torch.optim.Adamax(model.parameters(), lr=0.0005)
 
-    for batch in dataloader:
+    span_tp, span_fp, span_fn = 0.0, 0.0, 0.0
+    outputs = []
+    for i, batch in enumerate(dataloader):
         tokens, token_type_ids, start_labels, end_labels, start_label_mask, end_label_mask, match_labels, sample_idx, label_idx = batch
         attention_mask = (tokens != 0).long()
 
-        optimizer.zero_grad()
+        # optimizer.zero_grad()
+        model.train()
+        model.zero_grad()
         start_logits, end_logits, span_logits = model(tokens, attention_mask=attention_mask, token_type_ids=token_type_ids)
 
         start_loss, end_loss, match_loss = compute_loss(start_logits=start_logits,
@@ -175,7 +220,35 @@ if __name__ == "__main__":
                                                              start_label_mask=start_label_mask,
                                                              end_label_mask=end_label_mask
                                                              )
-        print(start_loss, end_loss, match_loss)
+
         total_loss = 0.5 * start_loss + 0.5 * end_loss + 0.5 * match_loss
+        total_loss.backward()
 
         optimizer.step()
+        model.zero_grad()
+
+        print("batch {} loss value {}".format(i, total_loss.data.cpu().numpy()))
+
+        start_preds, end_preds = start_logits > 0, end_logits > 0
+        span_f1_stats = query_span_f1(start_preds=start_preds, end_preds=end_preds, match_logits=span_logits,
+                                     start_label_mask=start_label_mask, end_label_mask=end_label_mask,
+                                     match_labels=match_labels)
+
+        tp, fp, fn = span_f1_stats.numpy()
+        print(tp, fp, fn)
+        span_tp += tp
+        span_fp += fp
+        span_fn += fn
+    #     print(span_f1_stats)
+    #     outputs.append(span_f1_stats)
+    # all_counts = torch.stack(outputs).sum(0)
+    tensorboard_logs = dict()
+    # span_tp, span_fp, span_fn = all_counts
+    span_recall = span_tp / (span_tp + span_fn + 1e-10)
+    span_precision = span_tp / (span_tp + span_fp + 1e-10)
+    span_f1 = span_precision * span_recall * 2 / (span_recall + span_precision + 1e-10)
+    tensorboard_logs[f"span_precision"] = span_precision
+    tensorboard_logs[f"span_recall"] = span_recall
+    tensorboard_logs[f"span_f1"] = span_f1
+
+    print(tensorboard_logs)
