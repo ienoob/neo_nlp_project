@@ -15,6 +15,8 @@
 4）pointer net  
 5）tplink  
 6）novel_tagging [5]
+7) PURE [6]  https://github.com/princeton-nlp/PURE
+8) PRGC[7] 
 
 数据集 DuIE2.0 
 
@@ -23,7 +25,7 @@
 | 基于规则方法 | 0 | 0 | 0 |
 | spert | 0.3721 | 0.0322 | 0.0592 |
 | multi_head | 0.3919 | 0.2373 | 0.2956 |
-| pointer-network[3] | 0.1895 | 0.0033 | 0.0064 |
+| pointer-network[3] | 0.2507 | 0.0607 | 0.0977 |
 | tplink[4] | 0.6644 | 0.4880 | 0.5627 |
 
 
@@ -33,3 +35,6 @@
 [3] Joint Extraction of Entities and Relations Based on a Novel Decomposition Strategy 
 [4] Single-stage Joint Extraction of Entities and Relations Through Token Pair Linking
 [5] Joint Extraction of Entities and Relations Based on a Novel Tagging Scheme
+[6] Joint Entity and Relation Extraction with Table-Sequence Encoders
+[7] Two are Better than One:Joint Entity and Relation Extraction with Table-Sequence Encoders
+[8] PRGC: Potential Relation and Global Correspondence Based Joint Relational Triple Extraction
