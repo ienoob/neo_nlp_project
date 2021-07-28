@@ -183,6 +183,14 @@ def train_step(input_char, input_event_label, input_rd_event, input_rd_argument,
     return lossv
 
 
+def iter_all(input_list, i, cache):
+    if i == len(input_list):
+        yield cache
+    else:
+        for role in input_list[i]:
+            yield from iter_all(input_list, i+1, cache+[role])
+
+
 def evaluation(input_batch_data, model):
     hit_num = 0.0
     true_num = 0.0
@@ -201,11 +209,16 @@ def evaluation(input_batch_data, model):
             event_arg = [argument_id2bio[ea] for ea in event_arg]
             extract_arg = extract_entity(event_arg)
             extract_arg = [(x, y, int(z)) for x, y, z in extract_arg]
+            extract_arg_dict_by_role = dict()
+            for x, y, role_t in extract_arg:
+                extract_arg_dict_by_role.setdefault(role_t, [])
+                extract_arg_dict_by_role[role_t].append((x, y, role_t))
+
+            extract_arg_list = [v for _, v in extract_arg_dict_by_role.items()]
             if event_id in event_true_d:
-                print(extract_arg)
-                print(event_true_d[event_id])
-                if extract_arg in event_true_d[event_id]:
-                    hit_num += 1
+                for extract_arg in iter_all(extract_arg_list, 0, []):
+                    if extract_arg in event_true_d[event_id]:
+                        hit_num += 1
 
             event_row_res.append((event_id, extract_arg))
 

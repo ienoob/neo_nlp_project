@@ -32,9 +32,12 @@ class EventModelV2(tf.keras.Model):
 
     def call(self, inputs, input_event_type=None, input_evnet_type_mask=None, training=None, mask=None):
         mask = tf.logical_not(tf.equal(inputs, 0))
+        text_len = tf.reduce_sum(tf.cast(mask, dtype=tf.int32), axis=-1)-1
+        text_len = tf.expand_dims(text_len, axis=-1)
         embed = self.embed(inputs)
         bi_lstm_value = self.bi_lstm(embed, mask=mask)
-        event_logits = self.event_type(bi_lstm_value[:, -1, :])
+        last_value = tf.gather_nd(bi_lstm_value, text_len, batch_dims=1)
+        event_logits = self.event_type(last_value)
         if training:
             event_embed_value = self.event_embed(input_event_type)
             event_feature = seq_and_vec(bi_lstm_value, event_embed_value[:, 0, :])

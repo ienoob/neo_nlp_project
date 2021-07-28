@@ -223,71 +223,35 @@ def evaluation(batch_data, input_model):
             if (ei, ej, pi, pj, pt) in true_res:
                 hit_num += 1
 
-    # out_sub_value = tf.where(tf.greater(out_sub_preds, 0.5), 1, 0)
-    # out_po_value = tf.where(tf.greater(out_po_preds, 0.5), 1, 0)
-    # mask = tf.expand_dims(mask, 1)
-    # sub_data_mask = tf.repeat(mask, 2, axis=1)
-    # po_data_mask = tf.repeat(mask, 2 * predicate_num, axis=1)
-    # out_sub_value = out_sub_value.numpy() * sub_data_mask.numpy()
-    # out_po_value = out_po_value.numpy() * po_data_mask.numpy()
-    #
-    # hit_num = 0.0
-    # predict_num = 0.0
-    # real_num = 0.0
-    # # batch_num = out_sub_preds.shape[0]
-    # for b, s_pred in enumerate(out_sub_value):
-    #     true_res = batch_data["entity_relation_value"][b]
-    #     real_num += len(true_res)
-    #
-    #     po_pred = out_po_value[b]
-    #     # print(out_sub_preds[b])
-    #     entity_list = []
-    #     for j, sv in enumerate(s_pred[0]):
-    #         if sv == 0:
-    #             continue
-    #         for k, pv in enumerate(s_pred[1]):
-    #             if k < j:
-    #                 continue
-    #             if pv == 0:
-    #                 continue
-    #             entity_list.append((j, k))
-    #     print("predict sub num", len(entity_list))
-    #     po_list = []
-    #     for mi in range(predicate_num):
-    #         po_s_array = po_pred[mi*2]
-    #         po_e_array = po_pred[mi*2+1]
-    #
-    #         for mj, pvs in enumerate(po_s_array):
-    #             if pvs == 0:
-    #                 continue
-    #             for mk, pve in enumerate(po_e_array):
-    #                 if mk < mj:
-    #                     continue
-    #                 if pve == 0:
-    #                     continue
-    #                 po_list.append((mj, mk, mi))
-    #
-    #     print("predict po num", len(po_list))
-    #
-    #     sub_pre_list = [(ei, ej, pi, pj, pt) for ei, ej in entity_list for pi, pj, pt in po_list]
-    #     predict_num += len(sub_pre_list)
-    #     for ei, ej, pi, pj, pt in sub_pre_list:
-    #         if (ei, ej, pi, pj, pt) in true_res:
-    #             hit_num += 1
-    #     predict_res.append(sub_pre_list)
     return {
         "hit_num": hit_num,
         "predict_num": predict_num,
         "real_num": real_num
     }
 
+
+def dev_evaluation(data_iter, model):
+    test_batch_num = 10
+    final_res = {"hit_num": 0.0, "real_num": 0.0, "predict_num": 0.0}
+    batch_data_iter = data_iter.dev_iter(test_batch_num)
+    for batch_data in batch_data_iter:
+        e_res = evaluation(batch_data, model)
+        print("eval => {}".format(e_res))
+        final_res["hit_num"] += e_res["hit_num"]
+        final_res["real_num"] += e_res["real_num"]
+        final_res["predict_num"] += e_res["predict_num"]
+
+    eval_res = eval_metrix(final_res["hit_num"], final_res["real_num"], final_res["predict_num"])
+    print("evaluation dev res is {}".format(eval_res))
+
+
 from tf2.python.custom_schedule import CustomSchedule
 
 def main():
-    boundaries = [100000, 110000]
-    values = [0.01, 0.001, 0.001]
-
-    lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(boundaries, values)
+    # boundaries = [100000, 110000]
+    # values = [0.01, 0.001, 0.001]
+    #
+    # lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(boundaries, values)
 
     learing_rate = CustomSchedule(128*3)
 
@@ -316,7 +280,7 @@ def main():
 
     def loss_func_v2(input_y, logits, input_mask):
         mask_logic = tf.math.logical_not(tf.math.equal(input_y, 0))
-        mask = tf.where(mask_logic, 5.0, 1.0)
+        mask = tf.where(mask_logic, 3.0, 1.0)
         mask *= tf.cast(input_mask, dtype=tf.float32)
         loss_fun = tf.keras.losses.BinaryCrossentropy()
         input_y = tf.expand_dims(input_y, axis=-1)
@@ -340,7 +304,7 @@ def main():
             # print(po_data_mask.shape, po_logits.shape)
             # sub_logits = sub_logits * tf.cast(sub_data_mask, dtype=tf.float32)
             # po_logits = po_logits * tf.cast(po_data_mask, dtype=tf.float32)
-            lossv = 2.0*loss_func_v2(input_sub_label, sub_logits, sub_data_mask) + loss_func_v2(input_po_label, po_logits, po_data_mask)
+            lossv = loss_func_v2(input_sub_label, sub_logits, sub_data_mask) + 2*loss_func_v2(input_po_label, po_logits, po_data_mask)
             # print(lossv)
         variables = pm_model.variables
         gradients = tape.gradient(lossv, variables)
@@ -351,30 +315,31 @@ def main():
     epoch = 10
     model_path = "D:\\tmp\\pointer_net_model\\model"
     pm_model.load_weights(model_path)
+
+    for ep in range(epoch):
+        for batch_i, b_data in enumerate(data_iter.train_iter(batch_num)):
+            loss_value = train_step(b_data["encoding"], b_data["word_encode_id"], b_data["sub_loc"],
+                                    b_data["sub_label"], b_data["po_label"])
+
+            if batch_i % 100 == 0:
+                print("epoch {0} batch {1} loss value is {2}".format(ep, batch_i, loss_value))
+                print(evaluation(b_data, pm_model))
+                # pm_model.save_weights(model_path, save_format='tf')
+        dev_evaluation(data_iter, pm_model)
+
+
+    # test_batch_num = 10
+    # final_res = {"hit_num": 0.0, "real_num": 0.0, "predict_num": 0.0}
+    # batch_data_iter = data_iter.dev_iter(test_batch_num)
+    # for batch_data in batch_data_iter:
+    #     e_res = evaluation(batch_data, pm_model)
+    #     print("eval => {}".format(e_res))
+    #     final_res["hit_num"] += e_res["hit_num"]
+    #     final_res["real_num"] += e_res["real_num"]
+    #     final_res["predict_num"] += e_res["predict_num"]
     #
-    # for ep in range(epoch):
-    #     for batch_i, b_data in enumerate(data_iter.train_iter(batch_num)):
-    #         loss_value = train_step(b_data["encoding"], b_data["word_encode_id"], b_data["sub_loc"],
-    #                                 b_data["sub_label"], b_data["po_label"])
-    #
-    #         if batch_i % 100 == 0:
-    #             print("epoch {0} batch {1} loss value is {2}".format(ep, batch_i, loss_value))
-    #             print(evaluation(b_data, pm_model))
-    #             pm_model.save_weights(model_path, save_format='tf')
-
-
-    test_batch_num = 10
-    final_res = {"hit_num": 0.0, "real_num": 0.0, "predict_num": 0.0}
-    batch_data_iter = data_iter.dev_iter(test_batch_num)
-    for batch_data in batch_data_iter:
-        e_res = evaluation(batch_data, pm_model)
-        print("eval => {}".format(e_res))
-        final_res["hit_num"] += e_res["hit_num"]
-        final_res["real_num"] += e_res["real_num"]
-        final_res["predict_num"] += e_res["predict_num"]
-
-    eval_res = eval_metrix(final_res["hit_num"], final_res["real_num"], final_res["predict_num"])
-    print(eval_res)
+    # eval_res = eval_metrix(final_res["hit_num"], final_res["real_num"], final_res["predict_num"])
+    # print(eval_res)
     # test_batch_num = 1
     # pm_model.load_weights(model_path)
     # batch_data_iter = data_iter.dev_iter(test_batch_num)
