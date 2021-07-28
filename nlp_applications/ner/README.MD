@@ -34,7 +34,7 @@ msr data
 | pointer_net | 0.5948 | 0.8287 |  0.6926 | 
 | bert + crf(pytorch) | 0.8408 | 0.8735 | 0.8568 |
 | tener+crf(pytorch) | 0.7532 | 0.7952 | 0.7736 |
-| lattice lstm | null | null | null |
+| lattice lstm + crf (pytorch) | 0.6226 | 0.7298 | 0.6719 |
 
 ## 相关提高方法
 1) word-level feature
