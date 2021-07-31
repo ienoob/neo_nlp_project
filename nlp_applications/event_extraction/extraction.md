@@ -48,6 +48,13 @@ duee_v1.0
 | Pipeline |0.1960 | 0.2134 | 0.20436 |
 | EventModelV2 | 0.1190 | 0.1126 | 0.1157| 
 
+数据集
+duee_fin
+
+文档级别的事件抽取
+1）Doc2EDAG: An end-to-end document-level framework for chinese financial event extraction
+2）DCFEE: A Document-level Chinese Financial Event Extraction System based on Automatically Labeled Training Data
+3）Document-Level Event Role Filler Extraction using Multi-Granularity Contextualized Encoding
 
 
 
