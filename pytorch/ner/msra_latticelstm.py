@@ -230,4 +230,3 @@ if __name__ == "__main__":
             loss.backward()
             optimizer.step()
             model.zero_grad()
-        break
