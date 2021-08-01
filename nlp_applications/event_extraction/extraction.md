@@ -51,10 +51,13 @@ duee_v1.0
 数据集
 duee_fin
 
+方法1 Doc2EDAG
+
 文档级别的事件抽取
 1）Doc2EDAG: An end-to-end document-level framework for chinese financial event extraction
 2）DCFEE: A Document-level Chinese Financial Event Extraction System based on Automatically Labeled Training Data
 3）Document-Level Event Role Filler Extraction using Multi-Granularity Contextualized Encoding
+4) Document-Level Event Argument Extraction by Conditional Generation
 
 
 

@@ -734,6 +734,7 @@ class EventDocument(object):
         self._text = input_text
         self._text_id = input_text_id
         self._title = input_title
+        self._title_id = input_title_id
         self._sentence = []
         self._event_list = []
 
@@ -748,6 +749,10 @@ class EventDocument(object):
     @property
     def text_id(self):
         return self._text_id
+
+    @property
+    def title_id(self):
+        return self._title_id
 
     @property
     def event_list(self):
@@ -904,6 +909,11 @@ class LoaderBaiduDueeFin(object):
         self.argument_role2id = {
             "$unk$": 0
         }
+
+        self.event_argument2id = {
+            "pad": 0
+        }
+
         self.event2argument = {0: dict()}
         role_enum = dict()
         for schema in schema_data:
@@ -919,13 +929,17 @@ class LoaderBaiduDueeFin(object):
 
                 if "enum_items" in role:
                     role_enum[role["role"]] = role["enum_items"]
+                event_key = "{}_{}".format(event_type, role["role"])
+                if event_key not in self.event_argument2id:
+                    self.event_argument2id[event_key] = len(self.event_argument2id)
         self.id2event = {v: k for k, v in self.event2id.items()}
         self.id2argument_role = {v: k for k, v in self.argument_role2id.items()}
 
         train_path = data_path + "\\duee_fin_train.json\\duee_fin_train.json"
         test_path = data_path + "\\duee_fin_test1.json\\duee_fin_test1.json"
+        dev_path = data_path + "\\duee_fin_dev.json\\duee_fin_dev.json"
 
-        self.document = []
+        self.documents = []
         self.char2id = {
             "$pad$": 0,
             "$unk$": 1
@@ -995,14 +1009,14 @@ class LoaderBaiduDueeFin(object):
 
                     event.add_argument(argument)
                 sub_doc.add_event(event)
-            self.document.append(sub_doc)
+            self.documents.append(sub_doc)
 
-        self.test_document = []
-        test_data = load_json_line_data(test_path)
-        for i, sub_test_data in enumerate(test_data):
-            text = sub_test_data["text"]
-            title = sub_test_data["title"]
-            doc_id = sub_test_data["id"]
+        self.dev_documents = []
+        dev_data = load_json_line_data(dev_path)
+        for i, sub_dev_data in enumerate(dev_data):
+            text = sub_dev_data["text"]
+            title = sub_dev_data["title"]
+            doc_id = sub_dev_data["id"]
             text_id = []
             title_id = []
 
@@ -1015,8 +1029,53 @@ class LoaderBaiduDueeFin(object):
                 if char not in self.char2id:
                     self.char2id[char] = len(self.char2id)
                 title_id.append(self.char2id[char])
+
             sub_doc = EventDocument(doc_id, text, text_id, title, title_id)
-            self.test_document.append(sub_doc)
+            for sub_event in sub_dev_data.get("event_list", []):
+                event_id = self.event2id[sub_event["event_type"]]
+                sub_trigger = sub_event["trigger"]
+                sub_trigger_start_index = -1
+
+                event = Event(event_id, sub_trigger, sub_trigger_start_index)
+
+                for sub_argument in sub_event["arguments"]:
+                    # sub_arg_index = text.index(sub_argument["argument"])
+                    # try:
+                    #     sub_arg_index = text.index(sub_argument["argument"])
+                    # except Exception:
+                    #     print(sub_argument)
+                    #     continue
+                    sub_arg_index = -1
+                    sub_arg_role = sub_argument["role"]
+                    sub_arg_value = sub_argument["argument"]
+                    #
+                    # # todo 修改数据
+                    # if doc_id == "36ce324c5c05bae92f02e78a6ad8d40a" and sub_arg_role == "回购完成时间":
+                    #     sub_arg_value = "2020年第一次临时股东大会审议通过本次回购方案之日起12个月内"
+                    # if doc_id == "da8f29a5ce27036464fbd06ac3628c8b" and sub_arg_value == "Himalaya\nCapital":
+                    #     sub_arg_value = "Himalaya"
+                    # if doc_id == "68e59cc8d48a01bc473c17714e44649e":
+                    #     if sub_arg_value == "2015 年":
+                    #         sub_arg_value = "2015  年"
+                    #     if sub_arg_value == "2016 年":
+                    #         sub_arg_value = "2016  年"
+                    #     if sub_arg_value == "约 11 亿元":
+                    #         sub_arg_value = "约  11  亿元"
+                    # if doc_id == "0cf76bda7c36d1364d533824bb846731":
+                    #     if sub_arg_value == "Wondery 表情":
+                    #         sub_arg_value = "Wondery"
+                    # if doc_id == "cdfdb1e7b17256dc19d1b61d9ed8e83f":
+                    #     if sub_arg_value == "荣盛建设工程\n有限公司":
+                    #         sub_arg_value = "荣盛建设工程"
+
+                    argument = Argument(sub_arg_value, self.argument_role2id[sub_arg_role], sub_arg_role, sub_arg_index)
+                    if sub_arg_role in role_enum:
+                        argument.is_enum = 1
+                        argument.enum_items = role_enum[sub_arg_role]
+
+                    event.add_argument(argument)
+                sub_doc.add_event(event)
+            self.dev_documents.append(sub_doc)
 
 
 class QaPair(object):
