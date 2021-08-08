@@ -19,9 +19,9 @@ bio 序列标注模型
 11) lattice lstm [9]
 
 msr data
-实体类别有：AGE， ANGLE， AREA， CAPACTITY， B-DATE， DECIMAL， DURATION， FRACTION， FREQUENCY， B-INTEGER， 
+实体类别有：AGE， ANGLE， AREA， CAPACTITY， DATE， DECIMAL， DURATION， FRACTION， FREQUENCY， INTEGER， 
           LENGTH， LOCATION， MEASURE， MONEY， ORDINAL， ORGANIZATION， PERCENT， PERSON， PHONE， 
-           B-POSTALCODE， B-RATE， B-SPEED， TEMPERATURE， TIME， WEIGHT， WWW
+           POSTALCODE， RATE， SPEED， TEMPERATURE， TIME， WEIGHT， WWW
 
 | 方法 | recall | precision | f1-value |
 | ---- | -------| ---------| -------- |
@@ -35,6 +35,7 @@ msr data
 | bert + crf(pytorch) | 0.8408 | 0.8735 | 0.8568 |
 | tener+crf(pytorch) | 0.7532 | 0.7952 | 0.7736 |
 | lattice lstm + crf (pytorch) | 0.6226 | 0.7298 | 0.6719 |
+| roberta + crf (pytorch) |  0.9240 | 0.9381 |0.9310|
 
 ## 相关提高方法
 1) word-level feature
