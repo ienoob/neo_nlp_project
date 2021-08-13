@@ -200,7 +200,7 @@ def eval_data(model, data_loader):
     with torch.no_grad():
         for _, batch in tqdm(enumerate(data_loader), mininterval=5, leave=False, file=sys.stdout):
             batch_char_ids, batch_word_ids, batch_sentence_len, batch_gold_answer = batch
-            subject_preds, po_pred, data_idx = model(batch_char_ids, batch_word_ids, is_train=False, sentence_lens=batch_sentence_len)
+            subject_preds, po_preds, data_idx = model(batch_char_ids, batch_word_ids, is_train=False, sentence_lens=batch_sentence_len)
 
             for gold_answer in batch_gold_answer:
                 spo_gold_num += len(gold_answer)
@@ -209,10 +209,10 @@ def eval_data(model, data_loader):
                 continue
 
             # print(batch_gold_answer)
-            print(data_idx)
-            print(subject_preds.shape, po_preds.shape)
+            # print(data_idx)
+            # print(subject_preds.shape, po_preds.shape, len(data_idx))
             for i, (subject, po_pred) in enumerate(zip(subject_preds.data.cpu().numpy(), po_preds.data.cpu().numpy())):
-                gold_answer = batch_gold_answer[i]
+                gold_answer = batch_gold_answer[data_idx[i]]
 
                 sentence_len = batch_sentence_len[i]
 
@@ -320,10 +320,11 @@ if __name__ == "__main__":
                 print(
                     u"step {} / {} of epoch {}, train/loss: {}".format(step, len(train_data_loader),
                                                                        epoch, current_loss))
+                if step:
+                    eval_data(model, dev_data_loader)
                 global_loss = 0.0
 
-            if step and step % 100:
-                eval_data(model, dev_data_loader)
+
             # if step and step % 100 == 0:
 
 

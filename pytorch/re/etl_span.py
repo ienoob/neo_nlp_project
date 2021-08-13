@@ -275,7 +275,7 @@ class EtlSpan(nn.Module):
                     subject_ids.append(torch.tensor(subjects, dtype=torch.long))
                     sent_encoders.append(new_sent_encoder)
                     token_type_ids.append(token_type_id)
-                    data_idx.append(i)
+                    data_idx += [i]*len(subjects)
 
             if len(data_idx) == 0:
                 subject_ids = torch.zeros(1, 2).long().to(sent_encoder.device)
