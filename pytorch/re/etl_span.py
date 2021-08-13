@@ -261,7 +261,7 @@ class EtlSpan(nn.Module):
                         subjects.append((i, j))
                 answer_list.append(subjects)
 
-            sent_encoders, pass_ids, subject_ids, token_type_ids = [], [], [], []
+            sent_encoders, pass_ids, subject_ids, token_type_ids, data_idx = [], [], [], [], []
             for i, subjects in enumerate(answer_list):
                 if subjects:
                     pass_tensor = char_ids[i, :].unsqueeze(0).expand(len(subjects), char_ids.size(1))
@@ -275,11 +275,12 @@ class EtlSpan(nn.Module):
                     subject_ids.append(torch.tensor(subjects, dtype=torch.long))
                     sent_encoders.append(new_sent_encoder)
                     token_type_ids.append(token_type_id)
+                    data_idx.append(i)
 
-            if len(subject_ids) == 0:
+            if len(data_idx) == 0:
                 subject_ids = torch.zeros(1, 2).long().to(sent_encoder.device)
                 po_tensor = torch.zeros(1, sent_encoder.size(1)).long().to(sent_encoder.device)
-                return subject_ids, po_tensor, zero_sign
+                return subject_ids, po_tensor, data_idx
 
             pass_ids = torch.cat(pass_ids).to(sent_encoder.device)
             sent_encoders = torch.cat(sent_encoders).to(sent_encoder.device)
@@ -305,7 +306,7 @@ class EtlSpan(nn.Module):
                 sub_start_encoder = batch_gather(sent_encoders, subject_encoder[:, 0])
                 sub_end_encoder = batch_gather(sent_encoders, subject_encoder[:, 1])
                 subject = torch.cat([sub_start_encoder, sub_end_encoder], 1)
-                context_encoder = self.LayerNorm(sent_encoders, subject)
+                context_encoder = self.layer_norm(sent_encoders, subject)
                 context_encoder = self.transformer_encoder(context_encoder.transpose(1, 0),
                                                            src_key_padding_mask=pass_ids.eq(0)).transpose(0, 1)
                 po_pred = self.po_dense(context_encoder).reshape(subject_encoder.size(0), -1, self.classes_num, 2)
@@ -317,7 +318,7 @@ class EtlSpan(nn.Module):
 
             po_tensor = torch.cat(po_preds)
             po_tensor = nn.Sigmoid()(po_tensor)
-            return subject_ids, po_tensor, zero_sign
+            return subject_ids, po_tensor, data_idx
 
 
 
