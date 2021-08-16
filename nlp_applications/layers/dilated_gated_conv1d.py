@@ -18,8 +18,8 @@ class DilatedGatedConv1d(tf.keras.layers.Layer):
         self.conv1 = tf.keras.layers.Conv1D(dim * 2, 3, padding='same', dilation_rate=dilation_rate)
         self.dim = dim
 
-    def call(self, inputs, **kwargs):
-        seq, mask = inputs
+    def call(self, inputs, mask=None, **kwargs):
+        seq = inputs
         h = self.conv1(seq)
         def _gate(x):
             dropout_rate = 0.1
@@ -30,9 +30,10 @@ class DilatedGatedConv1d(tf.keras.layers.Layer):
             return g * s + (1 - g) * ih
 
         seq = _gate([seq, h])
-        seq = seq * mask
+        seq = seq * tf.cast(tf.expand_dims(mask, axis=-1), dtype=tf.float32)
 
         return seq
+
 
 def dilated_gated_conv1d(seq, mask, dilation_rate=1):
     """膨胀门卷积（残差式）

@@ -9,10 +9,10 @@
     dgcnn 指针网络
 
 """
+import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops import math_ops
 from nlp_applications.layers.dilated_gated_conv1d import DilatedGatedConv1d
-from nlp_applications.layers.neo_tf2_transformer import Attention
 
 def seq_gather(seq, idxs):
     """seq是[None, seq_len, s_size]的格式，
@@ -36,6 +36,13 @@ def seq_and_vec(seq, vec):
     return tf.concat([seq, vec], 2)
 
 
+def create_padding_mark(seq):
+    # 获取为0的padding项
+    seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
+
+    # 扩充维度以便用于attention矩阵
+    return seq[:, np.newaxis, np.newaxis, :]  # (batch_size,1,1,seq_len)
+
 class DgCnnPN(tf.keras.Model):
 
     def __init__(self, config):
@@ -43,19 +50,22 @@ class DgCnnPN(tf.keras.Model):
         self.embed = tf.keras.layers.Embedding(config.char_size, config.char_embed_size)
         self.word_embed = tf.keras.layers.Embedding(config.word_size, config.word_embed_size)
         self.position_embed = tf.keras.layers.Embedding(config.max_len, config.pos_embed_size)
-        self.dgc1 = DilatedGatedConv1d(config.char_embed_size)
-        self.dgc2 = DilatedGatedConv1d(config.char_embed_size, 2)
-        self.dgc3 = DilatedGatedConv1d(config.char_embed_size, 5)
-        self.dgc4 = DilatedGatedConv1d(config.char_embed_size)
-        self.dgc5 = DilatedGatedConv1d(config.char_embed_size, 2)
-        self.dgc6 = DilatedGatedConv1d(config.char_embed_size, 5)
-        self.dgc7 = DilatedGatedConv1d(config.char_embed_size)
-        self.dgc8 = DilatedGatedConv1d(config.char_embed_size, 2)
-        self.dgc9 = DilatedGatedConv1d(config.char_embed_size, 5)
-        self.dgc10 = DilatedGatedConv1d(config.char_embed_size)
-        self.dgc11 = DilatedGatedConv1d(config.char_embed_size)
-        self.dgc12 = DilatedGatedConv1d(config.char_embed_size)
-        self.normalizer = tf.keras.layers.BatchNormalization()
+        self.dgc1 = DilatedGatedConv1d(config.dgcnn_size)
+        self.dgc2 = DilatedGatedConv1d(config.dgcnn_size, 2)
+        self.dgc3 = DilatedGatedConv1d(config.dgcnn_size, 5)
+        self.dgc4 = DilatedGatedConv1d(config.dgcnn_size)
+        self.dgc5 = DilatedGatedConv1d(config.dgcnn_size, 2)
+        self.dgc6 = DilatedGatedConv1d(config.dgcnn_size, 5)
+        self.dgc7 = DilatedGatedConv1d(config.dgcnn_size)
+        self.dgc8 = DilatedGatedConv1d(config.dgcnn_size, 2)
+        self.dgc9 = DilatedGatedConv1d(config.dgcnn_size, 5)
+        self.dgc10 = DilatedGatedConv1d(config.dgcnn_size)
+        self.dgc11 = DilatedGatedConv1d(config.dgcnn_size)
+        self.dgc12 = DilatedGatedConv1d(config.dgcnn_size)
+        self.attention = tf.keras.layers.MultiHeadAttention(8, 16)
+        self.conv1 = tf.keras.layers.Conv1D(config.char_embed_size, 3,  activation='relu', padding='same')
+        self.po_attention = tf.keras.layers.MultiHeadAttention(8, 24)
+        self.conv2= tf.keras.layers.Conv1D(config.dgcnn_size, 3, activation='relu', padding='same')
         self.predicate_num = config.predicate_num
         self.sub_classifier = tf.keras.layers.Dense(2, activation="sigmoid")
         self.po_classifier = tf.keras.layers.Dense(config.predicate_num * 2, activation="sigmoid")
@@ -82,7 +92,15 @@ class DgCnnPN(tf.keras.Model):
         dgc_value = self.dgc11(dgc_value, mask=mask_value)
         dgc_value = self.dgc12(dgc_value, mask=mask_value)
 
-        sub_preds = self.sub_classifier(dgc_value)
+        # att_mask = tf.cast(tf.equal(inputs, 0), dtype=tf.float32) * -1e9
+        # att_mask = tf.repeat(tf.expand_dims(att_mask, axis=-1), 128, axis=-1)
+        att_mask = tf.expand_dims(mask_value, axis=1)
+        att_dgc = self.attention(dgc_value, dgc_value, dgc_value, att_mask)
+        # print(att.shape)
+        att_dgc = tf.concat([dgc_value, att_dgc], axis=-1)
+        att_dgc = self.conv1(att_dgc)
+        sub_preds = self.sub_classifier(att_dgc)
+        # tf.keras.layers.Concatenate()
 
         if not training:
             sub_preds = tf.transpose(sub_preds, perm=[0, 2, 1])
@@ -92,16 +110,18 @@ class DgCnnPN(tf.keras.Model):
             # top_value = tf.math.top_k(sub_preds, 20)
             # print(top_value.values[-1])
 
-            sub_value = tf.where(tf.greater(sub_preds, 0.6), 1.0, 0.0)
+            sub_value = tf.where(tf.greater(sub_preds, 0.5), 1.0, 0.0)
             sub_value = sub_value * sub_mask_value
 
             sub_value = sub_value.numpy()
             batch_spo_list = []
+            batch_entity_list = []
             predict_sub_num = 0
 
             for b, s_pred in enumerate(sub_value):
 
                 spo_list = []
+                entity_list = []
                 # print(np.sum(s_pred[0]), b)
                 # print(np.sum(s_pred[1]), b)
                 for j, sv in enumerate(s_pred[0]):
@@ -114,18 +134,22 @@ class DgCnnPN(tf.keras.Model):
                             continue
                         if pv == 0:
                             continue
-                        # entity_list.append((j, k))
+                        entity_list.append((j, k))
                         predict_sub_num += 1
                         sub_loc_start = tf.cast([[j]], dtype=tf.int32)
                         sub_loc_end = tf.cast([[k]], dtype=tf.int32)
 
-                        sub_start = seq_gather(dgc_value[b:b + 1, :, :], sub_loc_start)
-                        sub_end = seq_gather(dgc_value[b:b + 1, :, :], sub_loc_end)
+                        sub_start = seq_gather(att_dgc[b:b + 1, :, :], sub_loc_start)
+                        sub_end = seq_gather(att_dgc[b:b + 1, :, :], sub_loc_end)
                         sub_start_end = tf.concat((sub_start, sub_end), axis=-1)
 
-                        input_po_feature = seq_and_vec(dgc_value[b:b + 1, :, :], sub_start_end)
-                        input_po_feature = self.normalizer(input_po_feature)
-                        # input_po_feature = tf.concat([input_lstm_value[b:b+1,:,:], input_sub_feature], axis=-1)
+                        input_po_feature = seq_and_vec(att_dgc[b:b + 1, :, :], sub_start_end)
+                        # print(input_po_feature.shape, "po_feautre")
+                        att_mask_v = att_mask[b:b+1]
+                        input_po_feature_att = self.po_attention(input_po_feature, input_po_feature, input_po_feature,
+                                                             att_mask_v)
+                        input_po_feature = tf.concat([input_po_feature_att, input_po_feature], axis=-1)
+                        input_po_feature = self.conv2(input_po_feature)
 
                         po_preds = self.po_classifier(input_po_feature)
                         po_preds = tf.transpose(po_preds, perm=[0, 2, 1])
@@ -138,8 +162,6 @@ class DgCnnPN(tf.keras.Model):
                         po_preds *= po_data_mask
                         po_pred = po_preds.numpy()[0]
 
-                        po_pre_list = []
-
                         for mi in range(self.predicate_num):
                             if mi == 0:
                                 continue
@@ -147,29 +169,35 @@ class DgCnnPN(tf.keras.Model):
                             po_e_array = po_pred[mi * 2 + 1]
 
                             for mj, pvs in enumerate(po_s_array):
-                                if pvs < 0.6:
+                                if pvs < 0.5:
                                     continue
                                 for mk, pve in enumerate(po_e_array):
                                     if mk < mj:
                                         continue
-                                    if pve < 0.6:
+                                    if pve < 0.5:
                                         continue
-                                    po_pre_list.append((mj, mk, mi, pvs, pve))
-                        po_pre_list.sort(key=lambda x: x[3] + x[4], reverse=True)
-                        for mj, mk, mi, _, _ in po_pre_list[:10]:
-                            spo_list.append((j, k, mj, mk, mi))
+                                    # po_pre_list.append((mj, mk, mi, pvs, pve))
+                                    spo_list.append((j, k, mj, mk, mi))
+
+                                    break
+                        break
+                        # po_pre_list.sort(key=lambda x: x[3] + x[4], reverse=True)
+                        # for mj, mk, mi, _, _ in po_pre_list[:10]:
+                batch_entity_list.append(entity_list)
                 batch_spo_list.append(spo_list)
             # print(predict_sub_num)
-            return batch_spo_list
+            return batch_spo_list, batch_entity_list
         else:
             # input_lstm_value = self.dropout(input_lstm_value)
-            sub_start = seq_gather(dgc_value, input_sub_loc[:, 0:1])
-            sub_end = seq_gather(dgc_value, input_sub_loc[:, 1:2])
+            sub_start = seq_gather(att_dgc, input_sub_loc[:, 0:1])
+            sub_end = seq_gather(att_dgc, input_sub_loc[:, 1:2])
             sub_start_end = tf.concat((sub_start, sub_end), axis=-1)
-            input_po_feature = seq_and_vec(dgc_value, sub_start_end)
-            input_po_feature = self.normalizer(input_po_feature)
-            # input_po_feature = tf.concat([input_lstm_value, input_sub_feature], axis=-1)
-
+            input_po_feature = seq_and_vec(att_dgc, sub_start_end)
+            # print(input_po_feature.shape)
+            input_po_feature_att = self.po_attention(input_po_feature, input_po_feature, input_po_feature, att_mask)
+            # input_po_feature = self.normalizer(input_po_feature)
+            input_po_feature = tf.concat([input_po_feature_att, input_po_feature], axis=-1)
+            input_po_feature = self.conv2(input_po_feature)
             po_preds = self.po_classifier(input_po_feature)
 
             sub_preds = tf.transpose(sub_preds, perm=[0, 2, 1])

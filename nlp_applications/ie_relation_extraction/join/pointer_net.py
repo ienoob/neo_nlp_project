@@ -72,7 +72,7 @@ class PointerNet(tf.keras.models.Model):
         self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_size, return_sequences=True))
         self.sub_classifier = tf.keras.layers.Dense(2, activation="sigmoid")
         self.po_classifier = tf.keras.layers.Dense(predicate_num*2, activation="sigmoid")
-        self.normalizer = tf.keras.layers.LayerNormalization()
+        self.normalizer = tf.keras.layers.BatchNormalization()
         # self.dropout = tf.keras.layers.Dropout(0.5)
         self.predicate_num = predicate_num
 
@@ -165,11 +165,19 @@ class PointerNet(tf.keras.models.Model):
                                         continue
                                     if pve < 0.6:
                                         continue
+                                    spo_list.append((j, k, mj, mk, mi))
                                     po_pre_list.append((mj, mk, mi, pvs, pve))
-                        po_pre_list.sort(key=lambda x: x[3]+x[4], reverse=True)
-                        for mj, mk, mi, _, _ in po_pre_list[:10]:
-                            spo_list.append((j, k, mj, mk, mi))
+
+                                    break
+                        # po_pre_list.sort(key=lambda x: x[3]+x[4], reverse=True)
+                        # for mj, mk, mi, _, _ in po_pre_list[:10]:
+                        #     spo_list.append((j, k, mj, mk, mi))po_pre_list.sort(key=lambda x: x[3]+x[4], reverse=True)
+                        # for mj, mk, mi, _, _ in po_pre_list[:10]:
+                        #     spo_list.append((j, k, mj, mk, mi))
+
+                        break
                 batch_spo_list.append(spo_list)
+
             # print(predict_sub_num)
             return batch_spo_list
         else:
@@ -206,3 +214,9 @@ class PointerNet(tf.keras.models.Model):
         # po_preds = tf.transpose(po_preds, perm=[0, 2, 1])
         #
         # return sub_preds, po_preds, mask_value
+
+
+class PointerNetV1(tf.keras.models.Model):
+
+    def __init__(self):
+        super(PointerNetV1, self).__init__()
