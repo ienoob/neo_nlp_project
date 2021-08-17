@@ -13,7 +13,7 @@
 2）spert  
 3）multi_head  
 4）pointer net  
-5）tplink  
+5）tplink  https://github.com/131250208/TPlinker-joint-extraction
 6）novel_tagging [5]
 7) PURE [6]  https://github.com/princeton-nlp/PURE
 8) PRGC[7] 
@@ -27,6 +27,7 @@
 | multi_head | 0.3919 | 0.2373 | 0.2956 |
 | pointer-network[3] | 0.2381 | 0.2567 | 0.2471 |
 | tplink[4] | 0.6644 | 0.4880 | 0.5627 |
+| etl_span(pytorch) | 0.5083 | 0.6601 | 0.5743 |
 
 
 # 相关文章
