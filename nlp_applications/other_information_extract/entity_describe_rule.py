@@ -94,10 +94,12 @@ for sentence in generate_label_data():
 condition_sort = [(k, v) for k, v in condition.items()]
 condition_sort.sort(key=lambda x: x[1], reverse=True)
 
-for i in range(20):
-    print(condition_sort[i])
+# for i in range(100):
+#     print(condition_sort[i])
 
 df = pd.DataFrame(df)
+
+print(df.shape)
 df.to_csv("data.csv", index=False)
 
 """
