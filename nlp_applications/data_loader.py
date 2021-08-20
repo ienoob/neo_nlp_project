@@ -313,7 +313,7 @@ class Entity(object):
 
 class Relation(object):
 
-    def __init__(self, input_id, input_sub: Entity, input_obj:Entity):
+    def __init__(self, input_id, input_sub: Entity, input_obj: Entity):
         self._id = input_id
         self._relation_sub = input_sub
         self._relation_obj = input_obj
@@ -1088,6 +1088,19 @@ class QaPair(object):
         self._start = input_start
         self._is_impossible = is_impossible
 
+    @property
+    def q(self):
+        return self._q
+
+    @property
+    def a(self):
+        return self._a
+
+    @property
+    def start(self):
+        return self._start
+
+
 
 class QaDocument(object):
     def __init__(self, input_id, input_title, input_context):
@@ -1139,8 +1152,8 @@ class LoaderDuReaderChecklist(object):
             for char in context:
                 if char not in self.char2id:
                     self.char2id[char] = len(self.char2id)
-
-            for qa in paragraph["qa"]:
+            # print(paragraph)
+            for qa in paragraph["qas"]:
                 question = qa["question"]
                 for char in question:
                     if char not in self.char2id:

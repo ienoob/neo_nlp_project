@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader
 from torch.nn.modules import CrossEntropyLoss, BCEWithLogitsLoss
 from tokenizers import BertWordPieceTokenizer
 
+torch.set_num_threads(4)
 
 class BertQueryNerConfig(BertConfig):
     def __init__(self, **kwargs):
@@ -176,6 +177,7 @@ def query_span_f1(start_preds, end_preds, match_logits, start_label_mask, end_la
     fn = (match_labels & ~match_preds).long().sum()
     return torch.stack([tp, fp, fn])
 
+
 if __name__ == "__main__":
     bert_model_name = "bert-base-chinese"
     bert_path = "D:\data\\bert\\bert-base-chinese"
@@ -239,6 +241,8 @@ if __name__ == "__main__":
         span_tp += tp
         span_fp += fp
         span_fn += fn
+        if i == 500:
+            break
     #     print(span_f1_stats)
     #     outputs.append(span_f1_stats)
     # all_counts = torch.stack(outputs).sum(0)
