@@ -11,7 +11,7 @@ import numpy as np
 from nlp_applications.data_loader import LoaderBaiduDueeFin, EventDocument, Event, Argument, BaseDataIterator
 from nlp_applications.ner.evaluation import extract_entity
 
-sample_path = "D:\data\百度比赛\\2021语言与智能技术竞赛：多形态信息抽取任务\\篇章级事件抽取"
+sample_path = "D:\data\篇章级事件抽取"
 bd_data_loader = LoaderBaiduDueeFin(sample_path)
 max_len = 256
 print(bd_data_loader.event2id)
