@@ -202,9 +202,16 @@ def eval_data(model, data_loader):
             batch_char_ids, batch_word_ids, batch_sentence_len, batch_gold_answer = batch
             subject_preds, po_preds, data_idx = model(batch_char_ids, batch_word_ids, is_train=False, sentence_lens=batch_sentence_len)
 
+            sub_gold_data = []
             for gold_answer in batch_gold_answer:
                 spo_gold_num += len(gold_answer)
+                for s1, s2, o1, o2, p in gold_answer:
+                    if (s1, s2) not in sub_gold_data:
+                        sub_gold_data.append((s1, s2))
+            # print(sub_gold_data)
 
+            entity_gold_num += len(sub_gold_data)
+            entity_pred_num += subject_preds.shape[0]
             if len(data_idx) == 0:
                 continue
 
@@ -214,7 +221,11 @@ def eval_data(model, data_loader):
             for i, (subject, po_pred) in enumerate(zip(subject_preds.data.cpu().numpy(), po_preds.data.cpu().numpy())):
                 gold_answer = batch_gold_answer[data_idx[i]]
 
-                sentence_len = batch_sentence_len[i]
+                ss, se = subject[0], subject[1]
+                # print(i, ss, se)
+                if (ss, se) in sub_gold_data:
+                    entity_hit_num += 1
+                sentence_len = batch_sentence_len[data_idx[i]]
 
                 start = np.where(po_pred[:, :, 0] > 0.5)
                 end = np.where(po_pred[:, :, 1] > 0.4)
@@ -238,6 +249,14 @@ def eval_data(model, data_loader):
                     spo_pred_num += 1
                 # answer_dict[i][0].append(subject[0], subject[1])
                 # answer_dict[i][1].extend(po_predict)
+        print('============================================')
+        print("entity_em: {},\tentity_pred_num&entity_gold_num: {}\t{} ".format(entity_hit_num, entity_pred_num,
+                                                                                   entity_gold_num))
+        eval_metrix_res = eval_metrix(entity_hit_num, entity_gold_num, entity_pred_num)
+        print(
+            "entity_f1: {}, \tentity_precision: {},\tentity_recall: {} ".format(eval_metrix_res["f1_value"] * 100,
+                                                             eval_metrix_res["precision"] * 100,
+                                                             eval_metrix_res["recall"] * 100))
         print('============================================')
         print("em: {},\tpre&gold: {}\t{} ".format(spo_hit_num, spo_pred_num, spo_gold_num))
         eval_metrix_res = eval_metrix(spo_hit_num, spo_gold_num, spo_pred_num)
@@ -320,7 +339,7 @@ if __name__ == "__main__":
                 print(
                     u"step {} / {} of epoch {}, train/loss: {}".format(step, len(train_data_loader),
                                                                        epoch, current_loss))
-                if step:
+                if step and step % 1000 == 0:
                     eval_data(model, dev_data_loader)
                 global_loss = 0.0
 

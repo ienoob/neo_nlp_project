@@ -222,7 +222,6 @@ class EtlSpan(nn.Module):
     def forward(self, char_ids, word_ids, subject_ids=None, is_train=True, sentence_lens=[]):
         mask = char_ids != 0
         seq_mask = char_ids.eq(0)
-        zero_sign = 1
 
         char_emb = self.char_embed(char_ids)
         word_emb = self.word_convert_char(self.word_embed(word_ids))
@@ -249,6 +248,7 @@ class EtlSpan(nn.Module):
                 sentence_length = sentence_lens[iv]
                 start = np.where(sub_pred[:, 0] > 0.5)[0]
                 end = np.where(sub_pred[:, 1] > 0.4)[0]
+
                 subjects = []
                 for i in start:
                     j = end[end >= i]
