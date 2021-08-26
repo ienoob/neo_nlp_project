@@ -269,6 +269,10 @@ class Document(object):
         self._relation_list = input_relation_list
 
     @property
+    def id(self):
+        return self._id
+
+    @property
     def raw_text(self):
         return self._raw_text
 
@@ -444,11 +448,13 @@ class LoaderDuie2Dataset(object):
         表2 展示了其中5个复杂O值的关系类型及对应的例子。
         数据集中的句子来自百度百科、百度贴吧和百度信息流文本。
     """
-    def __init__(self, data_path):
+    def __init__(self, data_path, use_word_feature=True):
         self.schema_path = data_path + "//duie_schema//duie_schema.json"
         self.train_path = data_path + "//duie_train.json//duie_train.json"
         self.dev_path = data_path + "//duie_dev.json//duie_dev.json"
         self.test_path = data_path + "//duie_test1.json//duie_test1.json"
+
+        self.use_word_feature = use_word_feature
 
         schema_data_list = load_json_line_data(self.schema_path)
         train_data_list = load_json_line_data(self.train_path)
@@ -505,19 +511,26 @@ class LoaderDuie2Dataset(object):
 
         self.documents = []
         for i, train_data in enumerate(train_data_list):
+            # if i < 167933:
+            #     continue
+            if i == 107556:
+                continue
 
             self.data_len += 1
             self.max_seq_len = max(self.max_seq_len, len(train_data["text"]))
             train_text = train_data["text"]
+            if i == 5147:
+                train_text = "学校介绍都灵大学（Università degli Studi di Torino，UNITO），位于欧洲汽车工业制造基地、意大利第三大城市、皮耶蒙特首府都灵市中心，始建于1404年，至今已有600多年的历史 作为意大利规模最大的之一 都灵大学以经济学、化学、物理学、法学、医学和心理学等基础学科的研究见长，其经济学与工商管理专业在欧洲大陆享有盛誉"
+
             train_text_id = []
             for tt in train_text:
                 if tt not in self.char2id:
                     self.char2id[tt] = len(self.char2id)
                 train_text_id.append(self.char2id[tt])
-
-            for tword in jieba.cut(train_text):
-                if tword not in self.word2id:
-                    self.word2id[tword] = len(self.word2id)
+            if self.use_word_feature:
+                for tword in jieba.cut(train_text):
+                    if tword not in self.word2id:
+                        self.word2id[tword] = len(self.word2id)
 
             spo_list = train_data["spo_list"]
 
@@ -528,13 +541,206 @@ class LoaderDuie2Dataset(object):
             for spo in spo_list:
                 sub_subject = spo["subject"]
                 sub_subject_type = spo["subject_type"]
+                if i == 170637:
+                    if sub_subject == "":
+                        continue
+                if i == 70682:
+                    if sub_subject == "司马迁之人格与风格 道教徒的诗人李白及其痛苦":
+                        sub_subject = "司马迁之人格与风格　道教徒的诗人李白及其痛苦"
+                if i == 83169:
+                    if sub_subject == "过客相寻 ":
+                        sub_subject = "过客相寻"
+                if i == 81704:
+                    if sub_subject == "次韵答舒教授观余所藏墨 ":
+                        sub_subject = "次韵答舒教授观余所藏墨"
+                if i == 103942:
+                    if sub_subject == "分布计算环境  ":
+                        sub_subject = "分布计算环境"
+                if i == 145741:
+                    if sub_subject == "上海正午1":
+                        sub_subject = "上海正午"
+                if i == 21817:
+                    if sub_subject == "蜘蛛侠1":
+                        sub_subject = "蜘蛛侠"
+                if i == 83569:
+                    if sub_subject == " 海滩的一天 ":
+                        sub_subject = "海滩的一天"
+                if i == 147032:
+                    if sub_subject == "野蛮审判 ":
+                        sub_subject = "野蛮审判"
+                if i == 592:
+                    if sub_subject == "Rafael Tol":
+                        sub_subject = "Rafael Tolói"
+                if i == 2093:
+                    if sub_subject == "理发店3 ":
+                        sub_subject = "理发店3"
+                if i == 2715:
+                    if sub_subject == "朱子语类大全）140卷，即今通行本《朱子语类 ":
+                        sub_subject = "朱子语类大全）140卷，即今通行本《朱子语类"
+                if i == 11217:
+                    if sub_subject == "“宠”妃 ":
+                        sub_subject = "“宠”妃"
+                if i == 14372:
+                    if sub_subject == "1CN5A科技广场":
+                        sub_subject = "CN5A科技广场"
+                if i == 16692:
+                    if sub_subject == "看不见的TA之时间裂缝 ":
+                        sub_subject = "看不见的TA之时间裂缝"
+                if i == 17146:
+                    if sub_subject == " 摘星之旅":
+                        sub_subject = "摘星之旅"
+                if i == 18161:
+                    if sub_subject == "色·戒 ":
+                        sub_subject = "色·戒"
+                if i == 20083:
+                    if sub_subject == "趣头条邀请码A8133后接0868 ":
+                        sub_subject = "趣头条邀请码A8133后接0868"
+                if i == 20961:
+                    if sub_subject == "":
+                        continue
+                if i == 22315:
+                    if sub_subject == " 山楂树 ":
+                        sub_subject = "山楂树"
+                    if sub_subject == " 星星之火":
+                        sub_subject = "星星之火"
+                if i == 26886:
+                    if sub_subject == "特殊案件专案组TEN":
+                        sub_subject = "特殊案件专案组TEN2"
+                if i == 28701:
+                    if sub_subject == "金针诗格 ":
+                        sub_subject = "金针诗格"
+                if i == 30613:
+                    if sub_subject == "胭脂\xa0":
+                        sub_subject = "胭脂"
+                if i == 37817:
+                    if sub_subject == " 夕阳毒·痴情未央":
+                        sub_subject = "夕阳毒·痴情未央"
+                if i == 51557:
+                    if sub_subject == "The Beatles Code":
+                        sub_subject = "The Beatles Code2"
+                if i == 56961:
+                    if sub_subject == "红色赞美诗 /Még kér a nép ":
+                        sub_subject = "红色赞美诗 /Még kér a nép"
+                if i == 63858:
+                    if sub_subject == "银翼杀手2":
+                        sub_subject = "银翼杀手2049"
+                if i == 65929:
+                    if sub_subject == "我和美少妇的秘密 ":
+                        sub_subject = "我和美少妇的秘密"
+                if i == 66911:
+                    if sub_subject == "四库全书总目提要·卷一百四十·子部五十 ":
+                        sub_subject = "四库全书总目提要·卷一百四十·子部五十"
+                if i == 69827:
+                    if sub_subject == " 赤壁赋 ":
+                        sub_subject = "赤壁赋"
+                if i == 71879:
+                    if sub_subject == "#你是我的姐妹# ":
+                        sub_subject = "#你是我的姐妹#"
+                if i == 72850:
+                    if sub_subject == "复仇者联盟4 ":
+                        sub_subject = "复仇者联盟4"
+                if i == 90738:
+                    if sub_subject == " 平凡的重生日子 ":
+                        sub_subject = "平凡的重生日子"
+                if i == 90841:
+                    if sub_subject == "":
+                        continue
+                if i == 97087:
+                    if sub_subject == "莫吟冷夜寒\xa0\xa0 ":
+                        sub_subject = "莫吟冷夜寒"
+                if i == 98269:
+                    if sub_subject == "12年":
+                        sub_subject = "2012年"
+                if i == 103942:
+                    if sub_subject == "分布计算环境 ":
+                        sub_subject = "分布计算环境"
+                if i == 111527:
+                    if sub_subject == " 中国房地产发展报告( No.2) ":
+                        sub_subject = "中国房地产发展报告( No.2)"
+                if i == 111546:
+                    if sub_subject == " 仙嫁 ":
+                        sub_subject = "仙嫁"
+                if i == 125359:
+                    if sub_subject == " 先知，沙与沫":
+                        sub_subject = "先知，沙与沫"
+                if i == 128861:
+                    if sub_subject == "太阳山\xa0":
+                        sub_subject = "太阳山"
+                if i == 130653:
+                    if sub_subject == "只有医生知道 ":
+                        sub_subject = "只有医生知道"
+
+                if i == 133985:
+                    if sub_subject == " 猫游记":
+                        sub_subject = "猫游记"
+                if i == 135885:
+                    if sub_subject == "跟我的前妻谈恋爱 ":
+                        sub_subject = "跟我的前妻谈恋爱"
+                if i == 138193:
+                    if sub_subject == "Mojang":
+                        sub_subject = "MojangAB"
+                if i == 138348:
+                    if sub_subject == "帝王攻略 ":
+                        sub_subject = "帝王攻略"
+                if i == 145532:
+                    if sub_subject == "暴力街区1":
+                        sub_subject = "暴力街区13"
+                if i == 146665:
+                    if sub_subject == "小恐龙阿贡 | GON -ゴン- ":
+                        sub_subject = "小恐龙阿贡 | GON -ゴン-"
+                if i == 149793:
+                    if sub_subject == "质量管理 ":
+                        sub_subject = "质量管理"
+                if i == 150635:
+                    if sub_subject == " 花田少年史 ":
+                        sub_subject = "花田少年史"
+                if i == 150641:
+                    if sub_subject == "四喜忧国 ":
+                        sub_subject = "四喜忧国"
+                if i == 154951:
+                    if sub_subject == "快穿女配：反派BOSS有毒 ":
+                        sub_subject = "快穿女配：反派BOSS有毒"
+                if i == 155929:
+                    if sub_subject == "轩辕剑之天之痕 ":
+                        sub_subject = "轩辕剑之天之痕"
+                if i == 165632:
+                    if sub_subject == "省委书记 ":
+                        sub_subject = "省委书记"
+                if i == 166260:
+                    if sub_subject == "失踪2 - Night is coming ":
+                        sub_subject = "失踪2 - Night is coming"
+                if i == 167430:
+                    if sub_subject == " 深圳情":
+                        sub_subject = "深圳情"
+                if i == 167430:
+                    if sub_subject == "夜色阑珊 ":
+                        sub_subject = "夜色阑珊"
+                if i == 168223:
+                    if sub_subject == "":
+                        continue
+                if i == 168675:
+                    if sub_subject == "7":
+                        sub_subject = "007"
+                if i == 169969:
+                    if sub_subject == " 神经漫游者 ":
+                        sub_subject = "神经漫游者"
+                if i == 170037:
+                    if sub_subject == "八方战士 ":
+                        sub_subject = "八方战士"
+                    if sub_subject == "梦幻空间 ":
+                        sub_subject = "梦幻空间"
+                    if sub_subject == "孤独战神 ":
+                        sub_subject = "孤独战神"
                 try:
                     sub_indx = train_text.index(sub_subject)
                 except Exception as e:
-                    # print(e, train_text, sub_subject)
-                    state = 1
-                    print(e)
-                    break
+                    print(i, state, "document")
+                    print(train_text, [sub_subject])
+                    raise Exception
+
+                if i == 167005:
+                    if sub_subject == "Haru":
+                        sub_indx = train_text.index("李Haru")+1
 
                 entity_sub = Entity(self.entity2id[sub_subject_type], sub_subject, sub_indx,
                                     sub_indx + len(sub_subject))
@@ -542,18 +748,176 @@ class LoaderDuie2Dataset(object):
 
                 entity_list.append(entity_sub)
 
-                sub_object = spo["object"]["@value"]
+                obj_object = spo["object"]["@value"]
                 sub_object_type = spo["object_type"]["@value"]
+
+                if i == 153266:
+                    if obj_object == "KBS明星发掘大赛冠军":
+                        obj_object = "2006KBS明星发掘大赛冠军"
+                if i == 103625:
+                    if obj_object == "Hito流行音乐奖高音质Hito最潜力女声奖":
+                        obj_object = "2014Hito流行音乐奖高音质Hito最潜力女声奖"
+                if i == 125381:
+                    if obj_object == "詹姆斯卡梅隆\xad":
+                        obj_object = "詹姆斯卡梅隆"
+                if i == 71744:
+                    if obj_object == "5":
+                        obj_object = "5,505,640"
+                if i == 38639:
+                    if obj_object == "81102":
+                        obj_object = "081102"
+                if i == 5147:
+                    if obj_object == "degli Studi di Torino":
+                        obj_object = "Università degli Studi di Torino"
+                if i == 12081:
+                    if obj_object == "0:00":
+                        obj_object = "00:00"
+                if i == 14323:
+                    if obj_object == "810":
+                        obj_object = "0810"
+                if i == 14515:
+                    if obj_object == "80202":
+                        obj_object = "080202"
+                if i == 27401:
+                    if obj_object == " 沈阳师范大学":
+                        obj_object = "沈阳师范大学"
+                if i == 32696:
+                    if obj_object == "810":
+                        obj_object = "0810"
+                if i == 33646:
+                    if obj_object == " 最爱还是你":
+                        obj_object = "最爱还是你"
+                if i == 35493:
+                    if obj_object == "MBC演艺大赏年度STAR奖":
+                        obj_object = "2013MBC演艺大赏年度STAR奖"
+                if i == 36506:
+                    if obj_object == "CNS":
+                        obj_object = "CNS1952"
+                if i == 40600:
+                    if obj_object == "为梦想喝彩 ":
+                        obj_object = "为梦想喝彩"
+                if i == 42982:
+                    if obj_object == "QUT":
+                        obj_object = "QUTBBS"
+                if i == 44859:
+                    if obj_object == "MTV封神榜音乐奖十大人气王":
+                        obj_object = "2011MTV封神榜音乐奖十大人气王"
+                if i == 53638:
+                    if obj_object == "n":
+                        obj_object = "N"
+                if i == 60695:
+                    if obj_object == "esley Chiang":
+                        obj_object = "Lesley Chiang"
+                if i == 71347:
+                    if obj_object == "810":
+                        obj_object = "0810"
+                if i == 75909:
+                    if obj_object == "r":
+                        obj_object = "Mark-Paul"
+                if i == 81827:
+                    if obj_object == "80502":
+                        obj_object = "080502"
+                if i == 89866:
+                    if obj_object == "810":
+                        obj_object = "0810"
+                if i == 91102:
+                    if obj_object == "lica Rivera":
+                        obj_object = "Angélica Rivera"
+                    if obj_object == "Roberto G":
+                        obj_object = "Roberto Gómez"
+                if i == 98495:
+                    if obj_object == "IGA":
+                        obj_object = "IIGA"
+                if i == 100194:
+                    if obj_object == "n":
+                        obj_object = "N"
+                if i == 102257:
+                    if obj_object == "":
+                        obj_object = "2016年10月"
+                if i == 108822:
+                    if obj_object == "810":
+                        obj_object = "0810"
+                if i == 116304:
+                    if obj_object == " 复旦大学":
+                        obj_object = "复旦大学"
+                if i == 120178:
+                    if obj_object == "810":
+                        obj_object = "0810"
+                if i == 126309:
+                    if obj_object == "Marc Ang":
+                        obj_object = "Marc Angélil"
+                if i == 129608:
+                    if obj_object == "52360":
+                        obj_object = "052360"
+                if i == 130752:
+                    if obj_object == "81102":
+                        obj_object = "081102"
+                if i == 136049:
+                    if obj_object == "50011":
+                        obj_object = "050011"
+                if i == 148182:
+                    if obj_object == " 广州美术学院":
+                        obj_object = "广州美术学院"
+                if i == 152738:
+                    if obj_object == "B1A":
+                        obj_object = "B1A4"
+                if i == 156697:
+                    if obj_object == "Daniel Cebri":
+                        obj_object = "Daniel Cebrián"
+                    if obj_object == "Jaime Ol":
+                        obj_object = "Jaime Olías"
+                # if i == 5147:
+                #     if obj_object == "Università degli Studi di Torino":
+                #         obj_object = "Universitàdegli Studi di Torino"
+
                 try:
-                    obj_indx = train_text.index(sub_object)
+                    obj_indx = train_text.index(obj_object)
                 except Exception as e:
-                    # print(e, train_text, sub_object)
-                    state = 1
+                    print(e, train_text, [obj_object], i)
                     print(e)
-                    break
-                entity_obj = Entity(self.entity2id[sub_object_type], sub_object, obj_indx,
-                                    obj_indx + len(sub_object))
-                self.entity_max_len = max(self.entity_max_len, len(sub_object))
+                    raise Exception
+                if i == 63086:
+                    if obj_object == "800万":
+                        obj_indx = train_text.index("#800万")+1
+                if i == 62125:
+                    if obj_object == "3":
+                        obj_indx = train_text.index("口3")+1
+                if i == 5665:
+                    if obj_object == "KBS":
+                        obj_indx = train_text.index("尔KBS") + 1
+                if i == 12844:
+                    if obj_object == "TVB":
+                        obj_indx = train_text.index("TVB 9")
+                if i == 14575:
+                    if obj_object == "2003年":
+                        obj_indx = train_text.index("2003年0")
+                if i == 44829:
+                    if obj_object == "SINO":
+                        obj_indx = train_text.index("SINO)")
+                if i == 76094:
+                    if obj_object == "210万":
+                        obj_indx = train_text.index("210万，累计18")
+                if i == 80363:
+                    if obj_object == "335万":
+                        obj_indx = train_text.index("335万 #分歧者")
+                    if obj_object == "8万":
+                        obj_indx = train_text.index("8万 #性上瘾")
+                if i == 81414:
+                    if obj_object == "6亿":
+                        obj_indx = train_text.index("者6亿")+1
+                if i == 110748:
+                    if obj_object == "GC":
+                        obj_indx = train_text.index("GC）")
+                if i == 114995:
+                    if obj_object == "ST":
+                        obj_indx = train_text.index("ST（")
+                if i == 157051:
+                    if obj_object == "120万":
+                        obj_indx = train_text.index("120万，累计3")
+
+                entity_obj = Entity(self.entity2id[sub_object_type], obj_object, obj_indx,
+                                    obj_indx + len(obj_object))
+                self.entity_max_len = max(self.entity_max_len, len(obj_object))
                 entity_list.append(entity_obj)
 
                 predicate_type = spo["predicate"]
@@ -589,10 +953,10 @@ class LoaderDuie2Dataset(object):
                     self.char2id[tt] = len(self.char2id)
                 train_text_id.append(self.char2id[tt])
                 # train_text_id.append(self.char2id.get(tt, self.char2id["<unk>"]))
-
-            for tword in jieba.cut(train_text):
-                if tword not in self.word2id:
-                    self.word2id[tword] = len(self.word2id)
+            if use_word_feature:
+                for tword in jieba.cut(train_text):
+                    if tword not in self.word2id:
+                        self.word2id[tword] = len(self.word2id)
 
             spo_list = train_data["spo_list"]
 
