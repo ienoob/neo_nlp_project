@@ -22,10 +22,18 @@ data_loader = LoaderDuReaderChecklist(path)
 tokenizer = BertTokenizerFast.from_pretrained("bert-base-chinese")
 # tokenizer = BertTokenizer.from_pretrained(bert_model_name)
 
+qa_list = []
+for document in data_loader.documents:
+    if len(document.context) > 400:
+        continue
+    for qa in document.qa_list:
+        qa_list.append((document.context, qa, document.id))
+
+
 class DuReaderDataset(Dataset):
-    def __init__(self, documents, tokenizer):
+    def __init__(self, qa_list, tokenizer):
         super(DuReaderDataset, self).__init__()
-        self.documents = documents
+        self.qa_list = qa_list
         self.tokenizer = tokenizer
 
     def __getitem__(self, item):
@@ -33,21 +41,11 @@ class DuReaderDataset(Dataset):
             Args:
                 item: int, idx
         """
-        document = self.documents[item]
-        # if len(document.context) > 512:
-        #     continue
-
-        for qa in document.qa_list:
-            # query_context_tokens = tokenizer.encode(qa.q, document.context, add_special_tokens=True)
-            # # print(query_context_tokens)
-            # tokens = query_context_tokens.ids
-            # type_ids = query_context_tokens.type_ids
-            # offsets = query_context_tokens.offsets
-
-            return document.context, qa, document.id
+        document = self.qa_list[item]
+        return document
 
     def __len__(self):
-        return len(self.documents)
+        return len(self.qa_list)
 
 
 def sequence_padding(inputs, length=None, padding=0, is_float=False):
@@ -77,7 +75,7 @@ def collate_to_max_length(batch):
     #     print(batch)
     max_len = 0
     for data in batch:
-        data = list(data)
+        # data = list(data)
         context, qa, doc_id = data
         query_context_tokens = tokenizer.encode_plus(qa.q, context, add_special_tokens=True, return_offsets_mapping=True)
 
@@ -274,6 +272,7 @@ class BertMRC(nn.Module):
         bert_outputs = self.bert_encoder(input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
 
         sequence_heatmap = bert_outputs[0]  # [batch, seq_len, hidden]
+        # print(sequence_heatmap.shape)
         batch_size, seq_len, hid_size = sequence_heatmap.size()
 
         start_logits = self.start_indx(sequence_heatmap).squeeze(-1)  # [batch, seq_len, 1]
@@ -289,6 +288,10 @@ class BertMRC(nn.Module):
 
         return start_logits, end_logits, span_logits
 
+def eval_model(model, batch_data):
+    pass
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
@@ -303,7 +306,7 @@ if __name__ == "__main__":
     parser.add_argument('--mrc_dropout', type=float, default=0.5, required=False)
     config = parser.parse_args()
 
-    dataset = DuReaderDataset(data_loader.documents, tokenizer)
+    dataset = DuReaderDataset(qa_list, tokenizer)
     train_data_loader = DataLoader(dataset,  batch_size=config.batch_size, num_workers=1,
                             collate_fn=collate_to_max_length)
 
@@ -330,17 +333,17 @@ if __name__ == "__main__":
         end_loss = bce_loss(end_logits.view(-1), batch_end.view(-1).float())
         end_loss = (end_loss * label_mask).sum() / label_mask.sum()
 
-        match_label_mask = (batch_loss_mask.unsqueeze(-1).expand(-1, -1, seq_len)
-                            & batch_loss_mask.unsqueeze(1).expand(-1, seq_len, -1))
-        match_label_mask = torch.triu(match_label_mask, 0)
-        # print(match_label_mask.shape)
-        # print(span_logits.shape)
-        # print(batch_span.shape)
-        match_label_mask = match_label_mask.view(config.batch_size, -1).float()
-        match_loss = bce_loss(span_logits.view(config.batch_size, -1), batch_span.view(config.batch_size, -1).float())
-        match_loss = (match_loss * match_label_mask).sum() / match_label_mask.sum()
+        # match_label_mask = (batch_loss_mask.unsqueeze(-1).expand(-1, -1, seq_len)
+        #                     & batch_loss_mask.unsqueeze(1).expand(-1, seq_len, -1))
+        # match_label_mask = torch.triu(match_label_mask, 0)
+        # # print(match_label_mask.shape)
+        # # print(span_logits.shape)
+        # # print(batch_span.shape)
+        # match_label_mask = match_label_mask.view(config.batch_size, -1).float()
+        # match_loss = bce_loss(span_logits.view(config.batch_size, -1), batch_span.view(config.batch_size, -1).float())
+        # match_loss = (match_loss * match_label_mask).sum() / match_label_mask.sum()
 
-        loss = start_loss + end_loss + match_loss
+        loss = start_loss + end_loss
 
         # print(loss)
 
