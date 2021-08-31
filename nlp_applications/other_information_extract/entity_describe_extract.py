@@ -19,8 +19,12 @@ import numpy as np
 import hanlp
 from nlp_applications.data_loader import load_json_line_data
 from nlp_applications.utils import load_word_vector
+from nlp_applications.ner.evaluation import metrix_v2
 from utils.neo_function import split_str
-from change_value import d
+from entity_describe_data_p1 import d
+from numpy import dot
+from numpy.linalg import norm
+from entity_describe_data_p2 import generater_label_single_file, generate_sohu, generator_weibo_list, generate_label_data
 import multiprocessing
 
 
@@ -38,7 +42,6 @@ class EntityDescribeExtractByRoleAnalysisV1(object):
 
         pos = self.ltp.pos(hidden)[ind]
         roles = self.ltp.srl(hidden, keep_empty=False)[ind]
-
         filter_p = {"是", "为"}
         role_list = ["A0", "A1", "A2", "A3", "A5"]
         # print(words)
@@ -131,6 +134,112 @@ class EntityDescribeExtractByRoleAnalysisV1(object):
         return spo_res
 
 
+class RuleValueTree(object):
+
+    def __init__(self, value=None):
+        self.value = value
+        self.next = dict()
+        self.is_leaf = 0
+
+rule_list = [
+            {
+                "sub_word_num": 1,
+                "sub_pos_full": "n",
+                "sub_dep_full": "top",
+                "pre_dep": "root",
+                "obj_pos": "n",
+                "obj_dep": "attr",
+                "pre_sub_dis": 0
+            },{
+                "sub_word_num": 1,
+                "sub_pos_full": "ns",
+                "sub_dep_full": "nsubj",
+                "pre_dep": "root",
+                "obj_pos": "n",
+                "obj_dep": "attr",
+                "pre_sub_dis": 0
+            },{
+                "sub_word_num": 2,
+                "sub_pos_full": "n-n",
+                "sub_dep_full": "nn-top",
+                "pre_dep": "root",
+                "obj_pos": "n",
+                "obj_dep": "attr",
+                "pre_sub_dis": 0
+            },{
+                "sub_word_num": 1,
+                "sub_pos_full": "n",
+                "sub_dep_full": "nsubj",
+                "pre_dep": "root",
+                "obj_pos": "n",
+                "obj_dep": "attr",
+                "pre_sub_dis": 0
+            },{
+                "sub_word_num": 1,
+                "sub_pos_full": "nx",
+                "sub_dep_full": "top",
+                "pre_dep": "root",
+                "obj_pos": "n",
+                "obj_dep": "attr",
+                "pre_sub_dis": 0
+            },{
+                "sub_word_num": 1,
+                "sub_pos_full": "n",
+                "sub_dep_full": "dep",
+                "pre_dep": "root",
+                "obj_pos": "n",
+                "obj_dep": "attr",
+                "pre_sub_dis": 2
+            },{
+                "sub_word_num": 1,
+                "sub_pos_full": "ns",
+                "sub_dep_full": "nsubj",
+                "pre_dep": "conj",
+                "obj_pos": "n",
+                "obj_dep": "attr",
+                "pre_sub_dis": 4
+            },{
+                "sub_word_num": 2,
+                "sub_pos_full": "t-t",
+                "sub_dep_full": "nn-top",
+                "pre_dep": "conj",
+                "obj_pos": "q",
+                "obj_dep": "attr",
+                "pre_sub_dis": 0
+            },{
+                "sub_word_num": 2,
+                "sub_pos_full": "ns-n",
+                "sub_dep_full": "nn-top",
+                "pre_dep": "root",
+                "obj_pos": "n",
+                "obj_dep": "attr",
+                "pre_sub_dis": 0
+            },{
+                "sub_word_num": 2,
+                "sub_pos_full": "ns-n",
+                "sub_dep_full": "nn-nsubj",
+                "pre_dep": "root",
+                "obj_pos": "n",
+                "obj_dep": "attr",
+                "pre_sub_dis": 0
+            },{
+                "sub_word_num": 1,
+                "sub_pos_full": "n",
+                "sub_dep_full": "dep",
+                "pre_dep": "root",
+                "obj_pos": "n",
+                "obj_dep": "attr",
+                "pre_sub_dis": 1
+            },{
+                "sub_word_num": 1,
+                "sub_pos_full": "n",
+                "sub_dep_full": "top",
+                "pre_dep": "root",
+                "obj_pos": "vn",
+                "obj_dep": "attr",
+                "pre_sub_dis": 0
+            }]
+
 #
 class EntityDescribeExtractByRoleAnalysis(object):
     """
@@ -138,9 +247,33 @@ class EntityDescribeExtractByRoleAnalysis(object):
     """
 
     def __init__(self):
-        self.HanLP = hanlp.load(hanlp.pretrained.mtl.CLOSE_TOK_POS_NER_SRL_DEP_SDP_CON_ELECTRA_SMALL_ZH)
+        model_path = "D:\\tmp\hanlp\model\close_tok_pos_ner_srl_dep_sdp_con_electra_small_20210304_135840"
+        # hanlp.pretrained.mtl.CLOSE_TOK_POS_NER_SRL_DEP_SDP_CON_ELECTRA_SMALL_ZH = ""
+        self.HanLP = hanlp.load(model_path)
         self.filter_p = {"是"}
         self.role_list = ["ARG0", "PRED", "ARG1"]
+
+        self.rule_root = RuleValueTree()
+        input_rule_lists = [[rule["sub_word_num"],
+                            rule["sub_pos_full"],
+                            rule["sub_dep_full"],
+                            rule["pre_dep"],
+                            rule["obj_pos"],
+                            rule["obj_dep"],
+                            rule["pre_sub_dis"]] for rule in rule_list]
+        self.build_rule_tree(input_rule_lists)
+
+    def add_rule(self, input_rule_list):
+        cur = self.rule_root
+        for rule_value in input_rule_list:
+            if rule_value not in cur.next:
+                cur.next[rule_value] = RuleValueTree(rule_value)
+            cur = cur.next[rule_value]
+        cur.is_leaf = 1
+
+    def build_rule_tree(self, input_rule_lists):
+        for input_rule_list in input_rule_lists:
+            self.add_rule(input_rule_list)
 
     def single_sentence(self, input_sentence):
         document = self.HanLP([input_sentence])
@@ -151,6 +284,131 @@ class EntityDescribeExtractByRoleAnalysis(object):
 
         spo_list = self.single_document(doc_srl, doc_pos, doc_word, doc_dep)
         return spo_list
+
+    def rule_v1(self, spo, input_document_pos, input_document_dep, input_document_word):
+        sentence_dep = input_document_dep
+        sentence_pos = input_document_pos
+        sub = spo["s"]
+        obj = spo["o"]
+        pre = spo["p"]
+        if spo["s"][0] in ["下图", "图片", "照片"]:
+            return True
+        if sub[2]-sub[1] != 1:
+            return True
+        if sentence_pos[sub[2] - 1] != "n":
+            return True
+        if sentence_pos[obj[2] - 1] != "n":
+            return True
+        if sentence_dep[pre[1]][1] != "root":
+            return True
+        if sentence_dep[sub[2] - 1][1] != "top":
+            return True
+        if sentence_dep[obj[2] - 1][1] != "attr":
+            return True
+        if pre[1] - sub[2] != 0:
+            return True
+        if sub[2]-1 != 0:
+            return True
+        return False
+
+    def rule_v2(self, spo, input_document_pos, input_document_dep, input_document_word):
+        sentence_dep = input_document_dep
+        sentence_pos = input_document_pos
+        sub = spo["s"]
+        obj = spo["o"]
+        pre = spo["p"]
+
+        if sub[2]-sub[1] != 1:
+            return True
+        if sentence_pos[sub[2] - 1] != "ns":
+            return True
+        if sentence_pos[obj[2] - 1] != "n":
+            return True
+        if sentence_dep[pre[1]][1] != "root":
+            return True
+        if sentence_dep[sub[2] - 1][1] != "nsubj":
+            return True
+        if sentence_dep[obj[2] - 1][1] != "attr":
+            return True
+        if pre[1] - sub[2] != 0:
+            return True
+        # if sub[2]-1 != 3:
+        #     return True
+        return False
+
+    def rule_(self, spo, input_document_pos, input_document_word, input_document_dep):
+        # 主语最后一个词必须是名词
+        if input_document_pos[spo["s"][2] - 1] not in ["n"]:
+            return True
+        if input_document_pos[spo["o"][2] - 1] not in ["n"]:
+            return True
+        if input_document_word[spo["s"][1]] in ["这", "后面", "我", "那些", "这些", "這", "这个", "她", "我们", "本",
+                                                "该", "那", "他们", "下列", "这位", "哪个", "下面", "前", "后", "这部",
+                                                "下图", "圖", "公司", "他", "现在", "今日", "今天", "这次", "你", "右图",
+                                                "本文", "左边", "图", "前述", "很多", "让", "在"]:
+            return True
+        if input_document_word[spo["p"][1] - 1] in ["不"]:
+            return True
+        if input_document_dep[spo["p"][1]][1] != "root":
+            return True
+        if input_document_word[spo["o"][1]] in ["我", "本", "我们"]:
+            return True
+        if input_document_dep[spo["o"][2] - 1][0] != spo["p"][1] + 1:
+            return True
+        # if input_document_dep[spo["p"][1]][1] != "root":
+        #     continue
+        if len(spo["o"][0]) < 8:
+            return True
+        if spo["p"][1] < spo["s"][2]:
+            return True
+        if spo["p"][2] > spo["o"][1]:
+            return True
+
+        return False
+
+    def rule(self, spo, input_document_pos , input_document_dep, input_document_word):
+        # rule_use = rule_list[0]
+        sentence_dep = input_document_dep
+        sentence_pos = input_document_pos
+        sub = spo["s"]
+        obj = spo["o"]
+        pre = spo["p"]
+
+        if spo["s"][0] in ["下图", "图片", "照片", "图", "右图"]:
+            return True
+
+        cur = self.rule_root
+        sub_word_num = sub[2]-sub[1]
+        if sub_word_num not in cur.next:
+            return True
+        cur = cur.next[sub_word_num]
+        sub_pos_full = "-".join(sentence_pos[sub[1]:sub[2]])
+        if sub_pos_full not in cur.next:
+            return True
+        cur = cur.next[sub_pos_full]
+        sub_dep = [item[1] for item in sentence_dep[sub[1]:sub[2]]]
+        sub_dep_full = "-".join(sub_dep)
+        if sub_dep_full not in cur.next:
+            return True
+        cur = cur.next[sub_dep_full]
+        pre_dep = sentence_dep[pre[1]][1]
+        if pre_dep not in cur.next:
+            return True
+        cur = cur.next[pre_dep]
+        obj_pos = sentence_pos[obj[2] - 1]
+        if obj_pos not in cur.next:
+            return True
+        cur = cur.next[obj_pos]
+        obj_dep = sentence_dep[obj[2] - 1][1]
+        if obj_dep not in cur.next:
+            return True
+        cur = cur.next[obj_dep]
+        pre_sub_dis = pre[1] - sub[2]
+        if pre_sub_dis not in cur.next:
+            return True
+
+        return False
+
 
     def single_document(self, input_document_srl, input_document_pos, input_document_word, input_document_dep=None):
         spo_list = []
@@ -178,35 +436,25 @@ class EntityDescribeExtractByRoleAnalysis(object):
                 continue
             if "s" not in spo:
                 continue
-            # 主语最后一个词必须是名词
-            if input_document_pos[spo["s"][2]-1] not in ["n"]:
-                continue
-            if input_document_pos[spo["o"][2]-1] not in ["n"]:
-                continue
-            if input_document_word[spo["s"][1]] in ["这", "后面", "我", "那些", "这些", "這", "这个", "她", "我们", "本",
-                                                    "该", "那", "他们", "下列", "这位", "哪个", "下面", "前", "后", "这部",
-                                                    "下图", "圖", "公司", "他", "现在", "今日", "今天", "这次", "你", "右图",
-                                                    "本文", "左边", "图", "前述", "很多", "让", "在"]:
-                continue
-            if input_document_word[spo["p"][1]-1] in ["不"]:
-                continue
-            if input_document_dep[spo["p"][1]][1] != "root":
-                continue
-            if input_document_word[spo["o"][1]] in ["我", "本", "我们"]:
-                continue
-            if input_document_dep[spo["o"][2]-1][0] != spo["p"][1]+1:
-                continue
-            # if input_document_dep[spo["p"][1]][1] != "root":
-            #     continue
-            if len(spo["o"][0]) < 8:
-                continue
             if spo["p"][1] < spo["s"][2]:
                 continue
             if spo["p"][2] > spo["o"][1]:
                 continue
 
-            spo_list.append(spo)
+            if (spo["o"][2]-spo["s"][1])*1.0/len(input_document_word) < 0.6:
+                # print(spo["o"], len(input_document_word))
+                continue
 
+            if self.rule(spo, input_document_pos, input_document_dep, input_document_word):
+                continue
+            # if input_document_word[spo["s"][1]] in ["这", "后面", "我", "那些", "这些", "這", "这个", "她", "我们", "本",
+            #                                         "该", "那", "他们", "下列", "这位", "哪个", "下面", "前", "后", "这部",
+            #                                         "下图", "圖", "公司", "他", "现在", "今日", "今天", "这次", "你", "右图",
+            #                                         "本文", "左边", "图", "前述", "很多", "让", "在"]:
+            #     continue
+
+            spo_list.append(spo)
+            break
         return spo_list
 
     def extract_info(self, input_data):
@@ -224,6 +472,12 @@ class EntityDescribeExtractByRoleAnalysis(object):
                 return False
             if i_sentence[-1] in ["?", "？"]:
                 return False
+            if "是我" in i_sentence:
+                return False
+            if "是你" in i_sentence:
+                return False
+            if i_sentence[0] == "但":
+                return False
             if not re.fullmatch("^[\u4e00-\u9fa5_a-zA-Z]{1,15}是.+$", i_sentence):
                 return False
             if re.fullmatch("^.+吗$", i_sentence):
@@ -231,7 +485,7 @@ class EntityDescribeExtractByRoleAnalysis(object):
             return True
 
         input_sentence_list = [sentence.strip() for sentence in input_sentence_list if simple_filter(sentence.strip())]
-        output_documents = self.HanLP(input_sentence_list)
+        output_documents = self.HanLP(input_sentence_list, tasks=["srl", "tok/fine", "pos/pku", "dep"])
         entity_describe_res = []
         for i, document in enumerate(output_documents.get("srl", list())):
             sentence_words = output_documents["tok/fine"][i]
@@ -248,24 +502,6 @@ class EntityDescribeExtractByRoleAnalysis(object):
                                             ))
 
         return entity_describe_res
-
-# def multi_process(processes_num=4):
-#     ede_model = EntityDescribeExtractByRoleAnalysis()
-#     pool = multiprocessing.Pool(processes=processes_num)
-#     result = []
-#     for i, dt in enumerate(data):
-#         if i >= 5:
-#             break
-#         print(dt["title"])
-#         sentence_list = re.split("[。\n]", dt["text"])
-#
-#         print(len(sentence_list))
-#
-#         out_spo = pool.apply_async(ede_model.extract_info, (sentence_list,))
-#         result.append(out_spo)
-#
-#     for res in result:
-#         print(":::", res.get())
 
 
 def test_extract_performance():
@@ -303,203 +539,117 @@ def test_extract_performance():
     print("{} byte/s".format(byte_size / cost_time))
 
 
+def eval_metrix(hit_num, true_num, predict_num):
+    recall = (hit_num + 1e-8) / (true_num + 1e-3)
+    precision = (hit_num + 1e-8) / (predict_num + 1e-3)
+    f1_value = 2 * recall * precision / (recall + precision)
+
+    return {
+        "recall": recall,
+        "precision": precision,
+        "f1_value": f1_value
+    }
+
 entity_describe = [
     {"entity": "江苏恒瑞医药股份有限公司", "sentence": "江苏恒瑞医药股份有限公司是一家从事医药创新和高品质药品研发、生产及推广的医药健康企业"}
 ]
 
-
-remove_title = ["心理学", "设计模式", "2003年7月", "Wiki", "操作系统列表", "亳州市", "材料科学", "中国历史", "语言列表",
-                           "秦汉三国历史年表", "人物", "教育", "隋唐五代十国历史年表", "中国省级行政区面积列表", "中华人民共和国各省级行政区人口列表", "江苏省",
-                           "中华人民共和国各省级行政区人口密度列表",
-                           "JavaScript", "法国历史", "台湾国旗", "文明摇篮", "全球反对对伊战争大游行", "倩女幽魂 (1987年电影)", "元素列表",
-                           "化学家列表", "摩托车", "松山区", "剧场", "各国人口列表", "国际电话区号列表", "彝族", "中华人民共和国历史年表", "中华民国大陆时期历史年表",
-                           "GTK+", "GIMP", "德国", "南亚", "艾滋病名人列表", "生物病毒分类表", "师傅", "太白", "白血球", "中国大陆高等学校列表", "1949年",
-                           "巴鲁赫·斯宾诺莎", "数量级 (时间)", "清华大学", "英国大学列表",
-                           "互联网顶级域列表", "1960年", "左丘明", "黑暗时代", "风车", "黄河", "1119年", "数学家列表", "1114年", "官方语言列表", "1983年",
-                           "计算机科学家列表", "图形文件格式比较", "历史上的今天", "澳大利亚",
-                           "2003年4月", "星座面积列表", "2003年6月", "456年", "457年", "458年", "世界宗教列表", "化学物质列表", "物理学家列表",
-                           "世界宗教列表", "加拿大同性婚姻", "诸子百家", "清福陵", "美国历史年表",
-                           "美国各州人口列表", "江青 (消歧义)", "1976年", "1977年", "姓氏", "姓", "顺治帝", "图书馆信息学", "美国各州面积列表", "美国历史",
-                           "古典主义时期歌剧", "中国图书馆分类法 (O)",
-                           "中国图书馆分类法 (Z)", "中国学科分类国家标准/110", "中国学科分类国家标准/120", "中国学科分类国家标准/130", "中国学科分类国家标准/140",
-                           "中国学科分类国家标准/150", "中国学科分类国家标准/160",
-                           "中国学科分类国家标准/170", "中国学科分类国家标准/180", "中国学科分类国家标准/210", "中国学科分类国家标准/220", "中国学科分类国家标准/230",
-                           "中国学科分类国家标准/240",
-                           "中国学科分类国家标准/310", "中国学科分类国家标准/320", "中国学科分类国家标准/330", "中国学科分类国家标准/340", "中国学科分类国家标准/350",
-                           "中国学科分类国家标准/360",
-                           "中国学科分类国家标准/410", "中国学科分类国家标准/420", "中国学科分类国家标准/430", "中国学科分类国家标准/440", "中国学科分类国家标准/450",
-                           "中国学科分类国家标准/460",
-                           "中国学科分类国家标准/470", "中国学科分类国家标准/480", "中国学科分类国家标准/490", "中国学科分类国家标准/510", "中国学科分类国家标准/520",
-                           "中国学科分类国家标准/530",
-                           "中国学科分类国家标准/540", "中国学科分类国家标准/550", "中国学科分类国家标准/560", "中国学科分类国家标准/570", "中国学科分类国家标准/580",
-                           "中国学科分类国家标准/590",
-                           "中国学科分类国家标准/610", "中国学科分类国家标准/620", "中国学科分类国家标准/630", "中国学科分类国家标准/710", "中国学科分类国家标准/720",
-                           "中国学科分类国家标准/730",
-                           "中国学科分类国家标准/750", "中国学科分类国家标准/760", "中国学科分类国家标准/770", "中国学科分类国家标准/780", "中国学科分类国家标准/790",
-                           "中国学科分类国家标准/810",
-                           "中国学科分类国家标准/820", "中国学科分类国家标准/830", "中国学科分类国家标准/850", "中国学科分类国家标准/860", "中国学科分类国家标准/870",
-                           "中国学科分类国家标准/880",
-                           "中国学科分类国家标准/890", "中国学科分类国家标准/910", "日本电影列表", "美国电影列表", "法国电影列表", "德国电影列表", "瑞典电影列表", "矿业工程",
-                           "1967年", "算法",
-                           "1966年", "导演列表", "中国学科分类国家标准/840", "扇形码", "比利时同性婚姻", "LGBT相关电视节目列表", "LGBT人物列表",
-                           "LGBT相关电影列表", "红白机游戏列表", "电信", "各国首都列表", "常见姓氏列表", "恩格尔系数", "克林顿", "统一教对性的看法", "宗教与同性恋", "韦伯",
-            "布莱尔", "乔治·布什", "长城 (消歧义)", "华盛顿", "荷兰同性婚姻", "美国同性婚姻", "管弦乐团列表", "歌剧魅影 (音乐剧)", "韩国 (消歧义)", "大阪 (消歧义)", "夏商周年表",
-                "非洲历史", "世界语语法", "Hello World", "联合国会员国列表", "欧洲联盟", "第一代编程语言", "巴洛克时期歌剧", "1758年", "前145年", "西藏历史", "1527年", "1118年"
-                "2003年", "1937年", "1990年", "2001年", "1854年", "1453年", "1884年", "岳麓山", "2003年8月", "中华人民共和国领导人列表", "701年", "2003年逝世人物列表",
-                "黄海海战", "日本县份人口表", "阿炳", "155年", "420年", "心理学家列表", "法华宗", "美国历史 (1865年－1918年)", "平江 (消歧义)", "1938年", "第二次世界大战各国伤亡统计",
-                "Microsoft Windows的历史", "2003年9月", "北海", "雷锋纪念馆", "澳大利亚大学列表", "丹麦大学列表", "法国大学列表", "德国大学列表", "洪都拉斯大学列表", "爱尔兰共和国大学列表",
-                "台湾大专院校列表", "西班牙大学列表", "菲律宾大学列表", "波兰大学列表", "挪威大学列表", "荷兰大学列表", "新西兰大学列表", "瑞士大学列表", "瑞典大学列表", "斯洛文尼亚大学列表",
-                "葡萄牙大学列表", "阿尔巴尼亚大学列表", "比利时大学列表", "爱沙尼亚大学列表", "1378年", "2000年", "1999年", "1998年", "1997年", "美国人口史", "吉尔吉斯", "吉尔吉斯斯坦",
-                "米 (消歧义)", "厘米", "世纪", "蒙古人", "格鲁吉亚", "10月14日", "心理学史", "外层空间", "中国乐器列表", "弗洛伊德", "借词", "香港行政区划", "梭罗", "越南民族", "六镇之乱",
-                "E (数学常数)", "北京官话", "殷", "商", "西班牙行政区划", "澳洲 (消歧义)", "纪元", "HTML字符编码", "希斯", "西贡", "汤 (消歧义)", "1789年美国总统选举", "中华人民共和国人权",
-                "香港儿童文学作家", "洛克", "印度民族", "北区", "中国地理", "西班牙文学", "长沙历史", "象棋 (消歧义)", "Smalltalk", "英联邦", "十国", "台北101", "1990年代", "中国文化 (消歧义)",
-                "达尔文", "天皇 (消歧义)", "古希腊数学", "大学 (经传)", "1980年代", "1970年代", "1960年代", "银版摄影法", "1930年代", "1950年代", "1940年代", "日本天皇列表", "茶花女 (消歧义)",
-                "古希腊哲学家列表", "尼克松 (消歧义)", "OWL", "芭蕾舞剧列表", "以色列人", "面向对象", "巴赫 (消歧义)", "前16年", "元", "五帝", "秦", "昆虫分类表", "湖南教育", "蚌埠市", "匹配",
-                "胡克定律", "多尔衮", "物理学定律列表", "万历朝鲜之役", "合理使用", "费马大定理", "绥靖主义", "军事技术与装备列表", "哈沃德·加德纳", "军事著作", "二十世纪的科学成就", "高雄市 (1979年-2010年)",
-                "2003年科技", "海洋", "鲧", "李朝", "东条英机", "吐谷浑首领列表", "2005年逝世人物列表", "丹麦君主列表", "发明家列表", "罗马皇帝列表", "威廉一世", "中信", "基辅罗斯统治者年表", "叶卡捷琳娜一世",
-                "彼得一世", "2月24日", "CET", "孙子", "苏联元帅列表", "中华人民共和国出版社列表", "朝鲜汉字", "音乐形式列表", "金酸莓奖", "人大", "前247年", "历史学家列表", "平方", "人民解放军 (消歧义)",
-                "中国军事", "埃及神祇列表", "白薇", "文学奖列表", "中国大陆报纸列表", "WCG", "LAN", "孔子弟子列表", "中国基督教史", "中国寺院列表", "黑客", "体育联盟列表", "纳粹德国对同性恋的迫害及屠杀",
-                "庞德 (消歧义)", "木星", "月球", "加勒比地区", "苏丹 (消歧义)", "李治 (消歧义)", "米 (单位)", "脱氧核糖核酸", "约翰·哈比森", "翻译 (消歧义)", "同性恋与犹太教", "英国君主列表", "西班牙人口",
-                "计算机病毒", "阿根廷", "国际葡萄酒城", "葡萄牙", "沙皇俄国", "俄罗斯历史", "国际组织列表", "马来西亚封衔", "操作系统历史", "伊拉克通讯", "美国人口调查局", "狭义相对论", "张衡 (消歧义)",
-                "民建联 (消歧义)"
-                           ] + ["{}年".format(i) for i in range(2021)] + ["{0}年{1}月".format(i, j) for i in range(2021) for j in range(1, 13)]
-
-
-
-add_title = ["肖申克的救赎", "Windows 2000", "Microsoft Windows", "Windows 98", "Windows 95", "红白机", "霸王别姬 (电影)",
-                      "Java", "PlayStation (游戏机)", "阿飞正传", "家有囍事", "激光", "MediaWiki", "利兹大学", "七龙珠",
-             "角斗士 (电影)",
-             "快乐快乐月刊", "字节", "三国志II 霸王的大陆"]
-
-
-def generater_label_single_file(iv):
-    data_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA\wiki_{:0>2d}".format(iv)
-
-    data = load_json_line_data(data_path)
-
-    for i, dt in enumerate(data):
-        # if i > 0:
-        #     break
-        if dt["title"] in remove_title:
-            continue
-        entity = dt["title"]
-        if entity in d:
-            entity = d[entity]
-
-        print(entity)
-        # print(dt["text"])
-        sentence_generator = split_str(dt["text"], {"。", "？", "！", "!", "?", "\r", "\n"})
-        sentence_list = [sentence for v, sentence in enumerate(sentence_generator) if v < 2]
-        if len(sentence_list) < 2:
-            continue
-        sentence = sentence_list[1]
-        if entity in add_title:
-            sentence = entity + sentence_list[1]
-        print(sentence)
-        yield {
-            "entity": entity,
-            "sentence": sentence,
-            "entity_start": sentence.index(entity)
-        }
-
-
-def generate_label_data(single_one=False):
-    entity_des_data = []
-    for iv in range(29):
-        yield from generater_label_single_file(iv)
-
-
-from scipy import spatial
-from numpy import dot
-from numpy.linalg import norm
-
-
-def cosine_sim(a, b):
-    return dot(a, b)/(norm(a)*norm(b))
-
-
 weibo_path = "D:\data\语料库\weibo_2019-05-18_10.30.41.txt\weibo_2019-05-18_10.30.41"
 wiki_path = "D:\data\语料库\wiki_zh_2019\wiki_zh\AA"
+sohu_path = "D:\data\语料库\sohu-20091019-20130819\sohu-20091019-20130819"
 
-
-def generator_weibo_list(i_path):
-    file_list = os.listdir(i_path)
-    for file in file_list:
-        weibo_file_path = i_path + "\\" + file
-        with open(weibo_file_path, "r", encoding="utf-8") as f:
-            data = f.read()
-
-            for weibo_one in data.split("\n"):
-                if weibo_one.strip():
-                    yield weibo_one
-
-
-def generator_wikicn_list(i_path):
-    file_list = os.listdir(i_path)
-    for file in file_list:
-        wiki_file_path = i_path + "\\" + file
-        data_list = load_json_line_data(wiki_file_path)
-        for data in data_list:
-            print(data["title"])
-            yield data["text"]
 
 
 def test_hanlp():
 
     ede_model = EntityDescribeExtractByRoleAnalysis()
 
-    # # test_extract_performance()
-    # word_embed_path = "D:\\data\\word2vec\\sgns.weibo.char\\sgns.weibo.char"
-    # word_embed = load_word_vector(word_embed_path)
-    # edera = EntityDescribeExtractByRoleAnalysis()
-    # # HanLP = hanlp.load(hanlp.pretrained.mtl.CLOSE_TOK_POS_NER_SRL_DEP_SDP_CON_ELECTRA_SMALL_ZH)
-    # generate_label_data()
-    # # # sentences_embed_list = []
     data_size = 0.0
     byte_size = 0.0
     cost_time = 0.0
 
-    # path = "test.txt"
-    # sentence_list = [entity_des["sentence"] for entity_des in entity_describe[:10]]
-    # print(ede_model.extract_info(sentence_list))
-
-    # data_iter = generator_wikicn_list(wiki_path)
     data_iter = generator_weibo_list(weibo_path)
     sentence = 0
     hit_num = 0.0
     predict_num = 0.0
     real_num = 0.0
-    file_name = "weibo_res.jsonline"
+    file_name = "weibo_rule4.jsonline"
     with open(file_name, "w") as f:
         f.write("")
     for data_content in data_iter:
         real_num += 1
-    # r_entity = data_content["entity"]
 
-    # data_content = data_content["sentence"]
         data_size += len(data_content)
         byte_size += len(data_content.encode())
         start = time.time()
-        data_list = list(split_str(data_content))
+        data_list = list(split_str(data_content, {"。", "？", "！", "!", "?", "\r", "\n", "//"}))
+        # print(len(data_list))
         e_res = ede_model.extract_info(data_list)
         if e_res:
-            predict_num += 1
-            # if e_res[0][0]["entity"] == r_entity:
-            #     hit_num += 1
-            # print(data_content)
+
             print(e_res[0][0])
             print(e_res[0][1])
             print(e_res[0][2])
         for es in e_res:
-            with open(file_name, "a+") as f:
-                f.write(json.dumps(es[0])+"\r")
-    # else:
-    #     print(r_entity)
-    #     print(data_content)
+            predict_num += 1
+            with open(file_name, "a+", encoding="utf-8") as f:
+                # print(json.dumps(es[0]))
+                f.write(json.dumps(es[0],  ensure_ascii=False)+"\r")
+        sentence += len(data_list)
+        if sentence > 100000:
+            break
+        cost_time += time.time() - start + 0.000000000000001
+
+    print("hit num {0} predict num {1} real num {2}".format(hit_num, predict_num, real_num))
+
+    print("data size {}".format(data_size))
+    print("sentence num {}".format(sentence))
+    print("cost time {} s".format(cost_time))
+    print("{} sentence/s".format(sentence / cost_time))
+    print("{} char/s".format(data_size / cost_time))
+    print("{} byte/s".format(byte_size / cost_time))
+
+
+def test_hanlp_wiki():
+
+    ede_model = EntityDescribeExtractByRoleAnalysis()
+
+    data_size = 0.0
+    byte_size = 0.0
+    cost_time = 0.0
+
+    data_iter = generate_label_data()
+    sentence = 0
+    hit_num = 0.0
+    predict_num = 0.0
+    real_num = 0.0
+    file_name = "weiki.jsonline"
+    with open(file_name, "w") as f:
+        f.write("")
+    for data_dict in data_iter:
+        data_entity = data_dict["entity"]
+        data_content = data_dict["sentence"]
+        real_num += 1
+        data_size += len(data_content)
+        byte_size += len(data_content.encode())
+        start = time.time()
+        data_list = list(split_str(data_content, {".", "。", "？", "！", "!", "?", "\r", "\n", "//"}))
+        # print(len(data_list))
+        e_res = ede_model.extract_info(data_list)
+
+        for es in e_res:
+            predict_num += 1
+            if es[0]["entity"] == data_entity:
+                hit_num += 1
+
+            with open(file_name, "a+", encoding="utf-8") as f:
+                # print(json.dumps(es[0]))
+                f.write(json.dumps(es[0],  ensure_ascii=False)+"\r")
         sentence += len(data_list)
         cost_time += time.time() - start + 0.000000000000001
 
     print("hit num {0} predict num {1} real num {2}".format(hit_num, predict_num, real_num))
+    print(eval_metrix(hit_num, real_num, predict_num))
 
     print("data size {}".format(data_size))
     print("sentence num {}".format(sentence))
@@ -537,10 +687,10 @@ if __name__ == "__main__":
     #     if i > max_num:
     #         break
     test_hanlp()
-
-    for sentence in generate_label_data():
-        print(sentence)
-        break
+    #
+    # for sentence in generate_label_data():
+    #     print(sentence)
+    #     break
 
 
 
