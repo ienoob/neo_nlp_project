@@ -3,6 +3,7 @@
 # Copyright (c) ***
 import torch
 import re
+import gensim
 import tika
 from transformers import BertTokenizer, BertForQuestionAnswering, PreTrainedTokenizerFast
 from pytorch.other_info_extraction.policy_data import content1, content2, content3, item_list
@@ -109,6 +110,8 @@ city_list = {
     }
 }
 
+qyxz_list = ["科技型企业", "科技服务机构", "高校、科研院所", "社会团体", "金融机构"]
+
 def search_area(input_area):
     cur = city_list
     while True:
@@ -195,9 +198,11 @@ class Document(object):
             "^（[一二三四五六七八九十]）.+",
             "^[1-9]\..+",
             "^（[1-9]）.+",
-            "^[①②③④⑤].+"
+            "^[①②③④⑤].+",
+            "^[1-9]、.+"
         ]
-        self.mrc_model = MRCMODULE()
+        # self.mrc_model = MRCMODULE()
+        self.mrc_model = None
 
     def title_ex(self, input_span):
         for i, title_p in enumerate(self.title):
@@ -215,6 +220,7 @@ class Document(object):
             span = span.strip()
             if len(span) == 0:
                 continue
+
             # print(span)
 
             title_ind = self.title_ex(span)
@@ -230,6 +236,8 @@ class Document(object):
                     if last_level != 0:
                         parent_id = parent[i]
                         parent[i+1] = parent_id
+                    else:
+                        parent[i + 1] = 0
                 else:
                     if title_level != 0:
                         # print(span_list[i])
@@ -261,10 +269,113 @@ class Document(object):
             self.child.setdefault(p, [])
             self.child[p].append(c)
 
+    # 如果数据就是一坨
+    def parse_root(self):
+        for span in self.content:
+            for span_content in span["content"]:
+                span_content_list = span_content.split("。")
+                for sentence in span_content_list:
+                    if "注册" in sentence:
+                        res = self.mrc_model.mrc("企业注册地区", sentence)
+                        if res:
+                            print(res, sentence)
 
     def display_document(self):
         for span in self.content:
             print("\t"*span["title_level"] + span["title"])
+
+    # 粗分类
+    def parse_content_v2(self):
+        condition_sentence = []
+        cailiao_sentence = []
+        jiangli_sentence = []
+
+        for i, span in enumerate(self.content):
+            title = span["title"]
+            if "申报条件" in title or "符合下列条件" in title or "申报要求" in title or "申报主体" in title or "申报限制":
+                for sentence in span["content"]:
+                    condition_sentence.append(sentence)
+
+                child_info = self.child.get(i, [])
+                for ci in child_info:
+                    title = self.content[ci]["title"]
+                    condition_sentence.append(title)
+
+            title = span["title"]
+            if "申报材料" in title:
+                for sentence in span["content"]:
+                    cailiao_sentence.append(sentence)
+
+                child_info = self.child.get(i, [])
+                for ci in child_info:
+                    title = self.content[ci]["title"]
+                    cailiao_sentence.append(title)
+            title = span["title"]
+            if "补贴内容" in title:
+                for sentence in span["content"]:
+                    jiangli_sentence.append(sentence)
+
+                child_info = self.child.get(i, [])
+                for ci in child_info:
+                    title = self.content[ci]["title"]
+                    jiangli_sentence.append(title)
+
+        print("条件")
+        print(condition_sentence)
+        print("材料")
+        print(cailiao_sentence)
+        print("奖励")
+        print(jiangli_sentence)
+
+    def parse_content_v1(self):
+        zhuce_list = []
+        zc_list = set()
+        shenbaocailiao_list = []
+        sbcl_list = set()
+        for i, span in enumerate(self.content):
+            title = span["title"]
+
+            if "申报条件" in title or "符合下列条件" in title or "申报要求" in title or "申报主体" in title:
+                if "注册" in title:
+                    zhuce_list.append(title)
+                for sentence in span["content"]:
+                    if "注册" in sentence:
+                        zhuce_list.append(sentence)
+                child_info = self.child.get(i, [])
+                for ci in child_info:
+                    title = self.content[ci]["title"]
+                    content = self.content[ci]["content"]
+                    if "注册" in title:
+                        zhuce_list.append(title)
+                    for sentence in content:
+                        if "注册" in sentence:
+                            zhuce_list.append(sentence)
+            if "申报方式" in title:
+                for sentence in span["content"]:
+                    sentence_list = sentence.split("。")
+                    for sent in sentence_list:
+                        if "材料" in sent:
+                            shenbaocailiao_list.append(sent)
+                child_info = self.child.get(i, [])
+                for ci in child_info:
+                    title = self.content[ci]["title"]
+                    content = self.content[ci]["content"]
+                    if "材料" in title:
+                        shenbaocailiao_list.append(title)
+                    for sentence in content:
+                        if "材料" in sentence:
+                            shenbaocailiao_list.append(sentence)
+        for sentence in zhuce_list:
+            # print(sentence)
+            ans = self.mrc_model.mrc("企业注册地区、地址", sentence)
+            if ans:
+                zc_list.add(ans)
+        for sentence in shenbaocailiao_list:
+            ans = self.mrc_model.mrc("申报 材料", sentence)
+            if ans:
+                sbcl_list.add(ans)
+        print(zc_list)
+        print(sbcl_list)
 
     def extract_zb(self):
         condition_title_level = -1
@@ -272,7 +383,7 @@ class Document(object):
         for i, span in enumerate(self.content):
             title = span["title"]
 
-            if "申报范围" in title or "申报条件" in title or "申报要求" in title or "申报对象" in title:
+            if "申报范围" in title or "申报条件" in title or "申报要求" in title or "申报对象" in title or "申报内容" in title:
                 # parent = self.content[]["title"]
                 parent_id = self.parent[i]
                 target_list.setdefault(parent_id, [])
@@ -294,16 +405,20 @@ class Document(object):
         for target, condition_list in target_list.items():
             target_info = {
                 "target_name": self.content[target]["title"],
-                "企业注册地区": "",
+                # "企业注册地区": "",
                 "成立时间": "",
                 "企业资质": "",
                 "人才资质": "",
-                "企业注册资金": ""
+                "企业注册资金": "",
+                "企业性质": "",
+                "营业收入": ""
             }
             zz_list = []
             zc_list = set()
             rc_list = []
             clsj_list = []
+            qyxz_list = []
+            yysr_list = []
             for content in self.content[target]["content"]:
                 for dt in rc_data:
                     if dt in content:
@@ -314,52 +429,86 @@ class Document(object):
                 if i in self.child:
                     child_list = self.child[i]
 
-                for z, _ in query_item_list["企业资质"].items():
-                    for content in self.content[i]["content"]:
+                for content in self.content[i]["content"]:
+                    for z, _ in query_item_list["企业资质"].items():
                         if z in content:
                             zz_list.append(z)
-                        if "注册" in content:
-                            ans = self.mrc_model.mrc("企业注册地区、地址", content)
-                            if ans:
-                                zc_list.add(ans)
-                        for dt in rc_data:
-                            if dt in content:
-                                rc_list.append(dt)
 
-                    for c in child_list:
-                        if z in self.content[c]["title"]:
-                            zz_list.append(z)
-                        if "注册" in self.content[c]["title"]:
-                            ans = self.mrc_model.mrc("企业注册地区、地址", self.content[c]["title"])
-                            if ans:
-                                zc_list.add(ans)
-
-                        for content in self.content[c]["content"]:
-                            if z in content:
+                        for c in child_list:
+                            if z in self.content[c]["title"]:
                                 zz_list.append(z)
-                            if "注册" in content:
-                                ans = self.mrc_model.mrc("企业注册地区、地址", content)
+                            if "注册" in self.content[c]["title"]:
+                                ans = self.mrc_model.mrc("企业注册地区、地址", self.content[c]["title"])
                                 if ans:
                                     zc_list.add(ans)
-                            for dt in rc_data:
-                                if dt in content:
-                                    rc_list.append(dt)
+
+                            for content in self.content[c]["content"]:
+                                if z in content:
+                                    zz_list.append(z)
+                                if "注册" in content:
+                                    ans = self.mrc_model.mrc("企业注册地区、地址", content)
+                                    if ans:
+                                        zc_list.add(ans)
+                                for dt in rc_data:
+                                    if dt in content:
+                                        rc_list.append(dt)
+                    if "注册" in content:
+                        ans = self.mrc_model.mrc("企业注册地区、地址", content)
+                        if ans:
+                            zc_list.add(ans)
+                    for dt in rc_data:
+                        if dt in content:
+                            rc_list.append(dt)
+                    if "成立期限" in content:
+                        ans = self.mrc_model.mrc("成立期限、时间", content)
+                        if ans:
+                            clsj_list.append(ans)
+                    if "营业收入" in content:
+                        ans = self.mrc_model.mrc("营业收入", content)
+                        if ans:
+                            yysr_list.append(ans)
+                    for dt in qyxz_list:
+                        if dt in content:
+                            qyxz_list.append(dt)
+
+
+                    # for content in self.content[i]["content"]:
+                    #     if z in content:
+                    #         zz_list.append(z)
+                    #     if "注册" in content:
+                    #         ans = self.mrc_model.mrc("企业注册地区、地址", content)
+                    #         if ans:
+                    #             zc_list.add(ans)
+                    #     for dt in rc_data:
+                    #         if dt in content:
+                    #             rc_list.append(dt)
+                    #     if "成立期限" in content:
+                    #         ans = self.mrc_model.mrc("成立期限、时间", content)
+                    #         if ans:
+                    #             clsj_list.append(ans)
+
+
             target_info["企业资质"] = "，".join(zz_list)
             # print("企业注册地区")
             # print(zc_list)
             zc_regular = []
             # print("格式化-》 ", )
-            for zc_area in zc_list:
-                reg_ind = search_area(zc_area)
-                if reg_ind != -1:
-                    zc_regular.append(area_regular_list[reg_ind])
-                    break
+            # for zc_area in zc_list:
+            #     reg_ind = search_area(zc_area)
+            #     if reg_ind != -1:
+            #         zc_regular.append(area_regular_list[reg_ind])
+            #         break
             target_info["企业注册地区--文本中抽取"] = "".join(zc_list)
             target_info["企业注册地区--格式化"] = "".join(zc_regular)
             target_info["人才资质"] = "，".join(rc_list)
+            target_info["成立时间"] = ",".join(clsj_list)
+            target_info["企业性质"] = ",".join(qyxz_list)
+            target_info["营业收入"] = ",".join(yysr_list)
 
             res.append(target_info)
         return res
+
+
 
 
 

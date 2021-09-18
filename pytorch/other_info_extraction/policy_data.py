@@ -365,23 +365,36 @@ content3 = """区内各有关单位：
 import requests
 item_list = [
     ("http://www.snd.gov.cn/hqqrmzf/c108354/202103/121c2429329744679b9d0e58f5f7012e.shtml", "高新区关于组织申报2021年度苏州市科技金融计划项目的通知"),
-    # ("http://jsszfhcxjst.jiangsu.gov.cn/art/2021/1/4/art_8639_9623745.html", "省住房城乡建设厅关于组织申报2021年度江苏省绿色建筑发展专项资金奖补项目的通知")
+    ("http://jsszfhcxjst.jiangsu.gov.cn/art/2021/1/4/art_8639_9623745.html", "省住房城乡建设厅关于组织申报2021年度江苏省绿色建筑发展专项资金奖补项目的通知"),
+    ("https://www.shaoyang.gov.cn/syjxw/tzgg/202109/de1e26e135c74e12b1a63d1b06c7bc5a.shtml", "工业和信息化部办公厅关于开展2021年度5G应用安全创新示范中心申报工作的通知"),
+    ("http://gxt.jiangsu.gov.cn/art/2021/9/3/art_6299_9999495.html", "关于开展2021年度省重点工业互联网平台申报工作的通知")
+]
+
+# 这是正文中不存在，附件pdf内容不可解析
+item_list_v2 = [
+    "转发《关于做好2021年省级智能制造示范车间申报工作的通知》的通知",
+]
+item_list_v3 = [
+    "关于开展2021年度省级中小企业公共服务示范平台认定工作的通知", "http://gxt.jiangsu.gov.cn/art/2021/7/28/art_6278_9953419.html",
+
 ]
 # url = "http://www.snd.gov.cn/hqqrmzf/c108354/202103/121c2429329744679b9d0e58f5f7012e.shtml"
 save_path = "D:\data\\政策信息抽取"
 
-for item in item_list[1:]:
-    url = item[0]
-    header = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36"
-    }
-    r = requests.get(url, headers=header)
-
-    if r.status_code != 200:
-        print(r.status_code)
-        continue
-
-    file_name = "D:\data\\政策信息抽取\\{}.txt".format(item[1])
-    with open(file_name, "wb") as f:
-        f.write(r.content)
+# for item in item_list[3:]:
+#     url = item[0]
+#     header = {
+#         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36"
+#     }
+#     r = requests.get(url, headers=header, verify=False)
+#
+#     if r.status_code != 200:
+#         print(r.status_code)
+#         print(r.content)
+#         continue
+#     # print(r.content)
+#
+#     file_name = "D:\data\\政策信息抽取\\{}.txt".format(item[1])
+#     with open(file_name, "wb") as f:
+#         f.write(r.content)
 
