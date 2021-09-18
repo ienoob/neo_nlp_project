@@ -1502,6 +1502,9 @@ class LoaderDuReaderChecklist(object):
         train_data = json.load(open(self.train_path, encoding="utf-8"))
         train_data_list = train_data["data"][0]["paragraphs"]
 
+        test_data = json.load(open(self.dev_path, encoding="utf-8"))
+        test_data_list = test_data["data"][0]["paragraphs"]
+
         self.char2id = {"pad": 0, "unk": 1}
         self.documents = []
         for i, paragraph in enumerate(train_data_list):
@@ -1526,6 +1529,21 @@ class LoaderDuReaderChecklist(object):
                                  qa["answers"][0]["text"], qa["answers"][0]["answer_start"], qa["is_impossible"])
                 doc.add_qa_item(qa_item)
             self.documents.append(doc)
+        self.dev_documents = []
+        for i, paragraph in enumerate(test_data_list):
+            context = paragraph["context"]
+            title = paragraph["title"]
+
+            doc = QaDocument(i, title, context)
+            for qa in paragraph["qas"]:
+                question = qa["question"]
+                for char in question:
+                    if char not in self.char2id:
+                        self.char2id[char] = len(self.char2id)
+                qa_item = QaPair(qa["id"], qa["type"], question,
+                                 qa["answers"][0]["text"], qa["answers"][0]["answer_start"], qa["is_impossible"])
+                doc.add_qa_item(qa_item)
+            self.dev_documents.append(doc)
 
 
 class LoaderBaiduDialogV1(object):

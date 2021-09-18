@@ -17,6 +17,7 @@ bert_model_name = "bert-base-chinese"
 path = "D:\data\阅读理解\\2021语言与智能技术竞赛：机器阅读理解任务"
 data_loader = LoaderDuReaderChecklist(path)
 
+torch.set_num_threads(1)
 # bert_path = "D:\data\\bert\\bert-base-chinese"
 # vocab_file = os.path.join(bert_path, "vocab.txt")
 tokenizer = BertTokenizerFast.from_pretrained("bert-base-chinese")
@@ -28,6 +29,13 @@ for document in data_loader.documents:
         continue
     for qa in document.qa_list:
         qa_list.append((document.context, qa, document.id))
+
+qa_dev_list = []
+for document in data_loader.dev_documents:
+    if len(document.context) > 400:
+        continue
+    for qa in document.qa_list:
+        qa_dev_list.append((document.context, qa, document.id))
 
 
 class DuReaderDataset(Dataset):
@@ -71,6 +79,10 @@ def collate_to_max_length(batch):
     batch_span = []
     batch_type_ids = []
     batch_loss_mask = []
+    batch_answers = []
+    batch_middles = []
+    batch_question = []
+    batch_context = []
     # if len(batch) != 2:
     #     print(batch)
     max_len = 0
@@ -87,6 +99,7 @@ def collate_to_max_length(batch):
         #     print(data)
         # print(data)
         context, qa, doc_id = data
+        answer = []
 
         query_context_tokens = tokenizer.encode_plus(qa.q, context, add_special_tokens=True, return_offsets_mapping=True)
         tokens = query_context_tokens["input_ids"]
@@ -103,8 +116,12 @@ def collate_to_max_length(batch):
         batch_ids.append(tokens)
         batch_masks.append(type_ids)
         batch_type_ids.append(attention_mask)
+        batch_context.append(context)
+
+        batch_question.append(qa.q)
 
         if qa.start != -1:
+            answer.append((qa.start, qa.a))
             qa_start = qa.start
             qa_end = qa.start + len(qa.a)
             if doc_id == 2844 and qa.q == "鲁滨逊漂流记作者":
@@ -114,28 +131,32 @@ def collate_to_max_length(batch):
 
             faker_start = -1
             faker_end = -1
-            middle = []
             # print(doc_id, qa.q, [qa.a])
             for iv, off in enumerate(offset_mapping):
                 if off == (0, 0):
-                    middle.append(iv)
                     continue
                 if qa_start == off[0]:
                     faker_start = iv
                 if qa_end == off[1]:
                     faker_end = iv
-            assert len(middle) == 3
-            loss_mask[middle[1] + 1:] = 1
+            # loss_mask[middle[1] + 1:] = 1
             start_label[faker_start] = 1
             end_label[faker_end] = 1
             span_label[faker_start, faker_end] = 1
+        middle = []
+        for iv, off in enumerate(offset_mapping):
+            if off == (0, 0):
+                middle.append(iv)
+        assert len(middle) == 3
+        loss_mask[middle[1] + 1:] = 1
 
-
+        batch_middles.append(middle[1])
         batch_start.append(start_label)
         batch_end.append(end_label)
         # print(span_label.shape)
         batch_span.append(span_label)
         batch_loss_mask.append(loss_mask)
+        batch_answers.append(answer)
 
     batch_ids = sequence_padding(batch_ids)
     batch_masks = sequence_padding(batch_masks)
@@ -152,7 +173,11 @@ def collate_to_max_length(batch):
         "batch_start": batch_start,
         "batch_end": batch_end,
         "batch_span": batch_span,
-        "batch_loss_mask": batch_loss_mask
+        "batch_loss_mask": batch_loss_mask,
+        "batch_answers": batch_answers,
+        "batch_middles": batch_middles,
+        "batch_question": batch_question,
+        "batch_context": batch_context
     }
 
 
@@ -193,6 +218,7 @@ def kmp(mom_string, son_string):
         return m - s
     # 匹配失败
     return -1
+
 
 
 
@@ -278,18 +304,45 @@ class BertMRC(nn.Module):
         start_logits = self.start_indx(sequence_heatmap).squeeze(-1)  # [batch, seq_len, 1]
         end_logits = self.end_indx(sequence_heatmap).squeeze(-1)  # [batch, seq_len, 1]
 
-        start_extend = sequence_heatmap.unsqueeze(2).expand(-1, -1, seq_len, -1)
-        # [batch, seq_len, seq_len, hidden]
-        end_extend = sequence_heatmap.unsqueeze(1).expand(-1, seq_len, -1, -1)
-        # [batch, seq_len, seq_len, hidden*2]
-        span_matrix = torch.cat([start_extend, end_extend], 3)
-        # [batch, seq_len, seq_len]
-        span_logits = self.span_embedding(span_matrix).squeeze(-1)
+        # start_extend = sequence_heatmap.unsqueeze(2).expand(-1, -1, seq_len, -1)
+        # # [batch, seq_len, seq_len, hidden]
+        # end_extend = sequence_heatmap.unsqueeze(1).expand(-1, seq_len, -1, -1)
+        # # [batch, seq_len, seq_len, hidden*2]
+        # span_matrix = torch.cat([start_extend, end_extend], 3)
+        # # [batch, seq_len, seq_len]
+        # span_logits = self.span_embedding(span_matrix).squeeze(-1)
 
-        return start_logits, end_logits, span_logits
+        return start_logits, end_logits, None
+
 
 def eval_model(model, batch_data):
-    pass
+    model.eval()
+    sigmoid = torch.nn.Sigmoid()
+    start_logits, end_logits, span_logits = model(batch["batch_ids"], batch["batch_type_ids"], batch["batch_masks"])
+    start_logits = sigmoid(start_logits).detach().numpy()
+    end_logits = sigmoid(end_logits).detach().numpy()
+
+    for b, start_logit in enumerate(start_logits):
+        valid_len = batch_data["batch_middles"][b]
+        context = batch_data["batch_context"][b]
+        end_logit = end_logits[b]
+        start_logit_max = np.argmax(start_logit[valid_len:])
+        end_logit_max = np.argmax(end_logit[valid_len:])
+        print(context)
+
+        que = batch_data["batch_question"][b]
+        print("question ", que)
+
+        ans = batch_data["batch_answers"][b]
+        print(ans)
+
+        pred = []
+        if start_logit[start_logit_max+valid_len] > 0.5 and end_logit[end_logit_max+valid_len] > 0.5:
+            pred.append((start_logit_max, end_logit_max))
+        print(pred)
+
+
+
 
 
 
@@ -297,7 +350,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
 
     parser.add_argument("--pretrain_name", type=str, default="hfl/chinese-roberta-wwm-ext", required=False)
-    parser.add_argument("--batch_size", type=int, default=5, required=False)
+    parser.add_argument("--batch_size", type=int, default=3, required=False)
     parser.add_argument("--epoch", type=int, default=10, required=False)
     parser.add_argument("--learning_rate", type=float, default=5e-5, required=False)
     parser.add_argument("--shuffle", type=bool, default=True, required=False)
@@ -307,55 +360,64 @@ if __name__ == "__main__":
     config = parser.parse_args()
 
     dataset = DuReaderDataset(qa_list, tokenizer)
+    dev_dataset = DuReaderDataset(qa_dev_list, tokenizer)
     train_data_loader = DataLoader(dataset,  batch_size=config.batch_size, num_workers=1,
-                            collate_fn=collate_to_max_length)
-
+                            collate_fn=collate_to_max_length, pin_memory=config.pin_memory)
+    dev_data_loader = DataLoader(dev_dataset,  batch_size=config.batch_size, num_workers=1,
+                            collate_fn=collate_to_max_length, pin_memory=config.pin_memory)
 
     model = BertMRC(config)
     bce_loss = nn.BCEWithLogitsLoss(reduction="none")
 
     optimizer = torch.optim.Adamax(model.parameters(), lr=0.0005)
-    for step, batch in enumerate(train_data_loader):
-        # batch_ids, batch_type_ids, batch_masks, batch_start, batch_end, batch_span = batch
-        model.train()
-        start_logits, end_logits, span_logits = model(batch["batch_ids"], batch["batch_type_ids"], batch["batch_masks"])
-        batch_masks = batch["batch_masks"]
-        batch_start = batch["batch_start"]
-        batch_end = batch["batch_end"]
-        batch_span = batch["batch_span"]
-        batch_loss_mask = batch["batch_loss_mask"]
-        b, seq_len, h = span_logits.shape
+    for epoch in range(config.epoch):
+        for step, batch in enumerate(train_data_loader):
+            model.train()
+            # print(batch["batch_ids"].shape)
+            start_logits, end_logits, span_logits = model(batch["batch_ids"], batch["batch_type_ids"], batch["batch_masks"])
+            batch_masks = batch["batch_masks"]
+            batch_start = batch["batch_start"]
+            batch_end = batch["batch_end"]
+            batch_span = batch["batch_span"]
+            batch_loss_mask = batch["batch_loss_mask"]
+            # b, seq_len, h = start_logits.shape
 
-        label_mask = batch_loss_mask.view(-1).float()
-        start_loss = bce_loss(start_logits.view(-1), batch_start.view(-1).float())
-        start_loss = (start_loss * label_mask).sum() / label_mask.sum()
+            label_mask = batch_loss_mask.view(-1).float()
+            start_loss = bce_loss(start_logits.view(-1), batch_start.view(-1).float())
+            start_loss = (start_loss * label_mask).sum() / label_mask.sum()
 
-        end_loss = bce_loss(end_logits.view(-1), batch_end.view(-1).float())
-        end_loss = (end_loss * label_mask).sum() / label_mask.sum()
+            end_loss = bce_loss(end_logits.view(-1), batch_end.view(-1).float())
+            end_loss = (end_loss * label_mask).sum() / label_mask.sum()
 
-        # match_label_mask = (batch_loss_mask.unsqueeze(-1).expand(-1, -1, seq_len)
-        #                     & batch_loss_mask.unsqueeze(1).expand(-1, seq_len, -1))
-        # match_label_mask = torch.triu(match_label_mask, 0)
-        # # print(match_label_mask.shape)
-        # # print(span_logits.shape)
-        # # print(batch_span.shape)
-        # match_label_mask = match_label_mask.view(config.batch_size, -1).float()
-        # match_loss = bce_loss(span_logits.view(config.batch_size, -1), batch_span.view(config.batch_size, -1).float())
-        # match_loss = (match_loss * match_label_mask).sum() / match_label_mask.sum()
+            # print(label_mask.sum())
+            # print(end_loss)
 
-        loss = start_loss + end_loss
+            # match_label_mask = (batch_loss_mask.unsqueeze(-1).expand(-1, -1, seq_len)
+            #                     & batch_loss_mask.unsqueeze(1).expand(-1, seq_len, -1))
+            # match_label_mask = torch.triu(match_label_mask, 0)
+            # # print(match_label_mask.shape)
+            # # print(span_logits.shape)
+            # # print(batch_span.shape)
+            # match_label_mask = match_label_mask.view(config.batch_size, -1).float()
+            # match_loss = bce_loss(span_logits.view(config.batch_size, -1), batch_span.view(config.batch_size, -1).float())
+            # match_loss = (match_loss * match_label_mask).sum() / match_label_mask.sum()
 
-        # print(loss)
+            loss = start_loss + end_loss
 
-        loss.backward()
+            # print(loss)
 
-        optimizer.step()
-        optimizer.zero_grad()
+            loss.backward()
 
-        if step % 20 == 0:
-            print(
-                u"step {} / {} of epoch {}, train/loss: {}".format(step, len(train_data_loader),
-                                                                   0, loss))
+            optimizer.step()
+            optimizer.zero_grad()
+
+            if step % 20 == 0:
+                print(
+                    u"step {} / {} of epoch {}, train/loss: {}".format(step, len(train_data_loader),
+                                                                       0, loss))
+        model.eval()
+        for batch_dev in dev_data_loader:
+            eval_model(model, batch_dev)
     #
     #     break
 

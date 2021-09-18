@@ -24,8 +24,12 @@ bert_model_name = "bert-base-chinese"
 max_len = data_loader.max_seq_len
 shaking_ind2matrix_ind = [(ind, end_ind) for ind in range(max_len) for end_ind in range(ind, max_len)]
 matrix_ind2shaking_ind = [[-1 for _ in range(max_len)] for _ in range(max_len)]
+max_map = {i: [] for i in range(1, max_len+1)}
 for shaking_ind, matrix_ind in enumerate(shaking_ind2matrix_ind):
     matrix_ind2shaking_ind[matrix_ind[0]][matrix_ind[1]] = shaking_ind
+    for k in max_map.keys():
+        if k >= matrix_ind[0] and k >= matrix_ind[1]:
+            max_map[k].append(shaking_ind)
 
 
 
@@ -78,6 +82,9 @@ class Duie2Dataset(Dataset):
             batch_size = len(documents)
             # print("hello inner v1")
             start = time.time()
+            # local_max_len = 0
+            # for document in documents:
+            #     local_max_len = max(local_max_len, len(document.raw_text))
 
             for document in documents:
                 # print("hello inner v2")
@@ -110,8 +117,10 @@ class Duie2Dataset(Dataset):
                 token_type_ids = torch.tensor(codes["token_type_ids"]).long()
                 offset_mapping = codes["offset_mapping"]
 
+
+
                 # print(codes)
-                seq_len = torch.gt(input_ids, 0).sum()
+                seq_len = len(text_word)
 
                 # print(seq_len, len(text_word), text_word)
                 # print(input_ids, document.id)
@@ -172,11 +181,14 @@ class Duie2Dataset(Dataset):
             # print("hello inner v2 cost {}".format(time.time()-start))
             start = time.time()
             shaking_seq_len = max_len * (max_len + 1) // 2
+            # shaking_seq_len = max_map[local_max_len]
             batch_ent2ent_seq_tag = torch.zeros(batch_size, shaking_seq_len).long()
             batch_ent2ent_seq_mask = torch.zeros(batch_size, shaking_seq_len).float()
+            # batch_ent2ent_seq_mask[:, :seq_len] = 1
 
             for batch_id, spots in enumerate(batch_ent2ent_spans):
                 seq_len = batch_sequence_lens[batch_id]
+                batch_ent2ent_seq_mask[batch_id][:max_map[seq_len]] = 1
                 # for iv in range(seq_len):
                 #     # start = iv*max_len+iv
                 #     # end = iv*max_len+seq_len
@@ -197,7 +209,8 @@ class Duie2Dataset(Dataset):
             batch_head2head_seq_tag = torch.zeros(batch_size, self.rel_num, shaking_seq_len).long()
             batch_head2head_seq_mask = torch.zeros(batch_size, self.rel_num, shaking_seq_len).float()
             for batch_id, spots in enumerate(batch_head2head_spans):
-                # seq_len = batch_sequence_lens[batch_id]
+                seq_len = batch_sequence_lens[batch_id]
+                batch_head2head_seq_mask[batch_id,:,:max_map[seq_len]] = 1
                 # for iv in range(seq_len):
                 #     for jv in range(iv, seq_len):
                 #         shaking_ind = matrix_ind2shaking_ind[iv][jv]
@@ -216,6 +229,8 @@ class Duie2Dataset(Dataset):
             batch_tail2tail_seq_tag = torch.zeros(batch_size, self.rel_num, shaking_seq_len).long()
             batch_tail2tail_seq_mask = torch.zeros(batch_size, self.rel_num, shaking_seq_len).float()
             for batch_id, spots in enumerate(batch_tail2tail_spans):
+                seq_len = batch_sequence_lens[batch_id]
+                batch_tail2tail_seq_mask[batch_id, :, :max_map[seq_len]] = 1
                 for sp in spots:
                     shaking_ind = matrix_ind2shaking_ind[sp[0]][sp[1]]
                     if shaking_ind == -1:
@@ -361,9 +376,9 @@ def eval_batch_data(model, batch_data, config=None):
         ent_shaking_outputs, head_rel_shaking_outputs, tail_rel_shaking_outputs = model(Variable(batch_data["batch_input_ids"]).to(config.device),
                                                                                         Variable(batch_data["batch_attention_mask"]).to(config.device),
                                                                                         Variable(batch_data["batch_token_type_id"]).to(config.device))
-        batch_pred_ent_shaking_tag = torch.argmax(ent_shaking_outputs, dim=-1)
-        batch_pred_head_rel_shaking_tag = torch.argmax(head_rel_shaking_outputs, dim=-1)
-        batch_pred_tail_rel_shaking_tag = torch.argmax(tail_rel_shaking_outputs, dim=-1)
+        # batch_pred_ent_shaking_tag = torch.argmax(ent_shaking_outputs, dim=-1)
+        # batch_pred_head_rel_shaking_tag = torch.argmax(head_rel_shaking_outputs, dim=-1)
+        # batch_pred_tail_rel_shaking_tag = torch.argmax(tail_rel_shaking_outputs, dim=-1)
         batch_gold_answer = batch["batch_gold_answer"]
         batch_sequence_lens = batch["batch_sequence_lens"]
         for ind, gold_answer in enumerate(batch_gold_answer):
@@ -371,10 +386,17 @@ def eval_batch_data(model, batch_data, config=None):
             seq_len = batch_sequence_lens[ind]
 
             ent_shaking_outputs_single = F.softmax(ent_shaking_outputs[ind], dim=-1)
-            print(torch.max(ent_shaking_outputs_single[:,1]))
-            pred_ent_shaking_tag = batch_pred_ent_shaking_tag[ind]
-            pred_head_rel_shaking_tag = batch_pred_head_rel_shaking_tag[ind]
-            pred_tail_rel_shaking_tag = batch_pred_tail_rel_shaking_tag[ind]
+            print(torch.max(ent_shaking_outputs_single[:,1]), "entity")
+
+            head_rel_shaking_outputs_single = F.softmax(head_rel_shaking_outputs[ind], dim=-1)
+            print(torch.max(head_rel_shaking_outputs_single[:, 1]), torch.max(head_rel_shaking_outputs_single[:, 2]), "head")
+
+            tail_rel_shaking_outputs_single = F.softmax(tail_rel_shaking_outputs[ind], dim=-1)
+            print(torch.max(tail_rel_shaking_outputs_single[:, 1]), torch.max(tail_rel_shaking_outputs_single[:, 2]), "tail")
+
+            pred_ent_shaking_tag = torch.argmax(ent_shaking_outputs[ind], dim=-1)
+            pred_head_rel_shaking_tag = torch.argmax(head_rel_shaking_outputs[ind], dim=-1)
+            pred_tail_rel_shaking_tag = torch.argmax(tail_rel_shaking_outputs[ind], dim=-1)
 
             rel_list = extract_res(pred_ent_shaking_tag, pred_head_rel_shaking_tag, pred_tail_rel_shaking_tag, seq_len)
 
@@ -425,12 +447,13 @@ if __name__ == "__main__":
     # loss_fct = nn.BCEWithLogitsLoss(reduction='none')
     def bias_loss(weights=None):
         if weights is not None:
-            weights = torch.FloatTensor(weights)
+            weights = torch.FloatTensor(weights).to(device)
         cross_en = nn.CrossEntropyLoss(weight=weights)
         return lambda pred, target: cross_en(pred.view(-1, pred.size()[-1]), target.view(-1))
 
 
-    loss_fct = bias_loss()
+    loss_fct1 = bias_loss(torch.FloatTensor([1.0, 5.0]))
+    loss_fct2 = bias_loss(torch.FloatTensor([1.0, 5.0, 5.0]))
     model = BertTplinkV2(config)
     model.to(device)
 
@@ -462,6 +485,7 @@ if __name__ == "__main__":
     total_steps = len(train_data_loader) * config.epoch + 1
     steps_per_ep = len(train_data_loader)
     z = (2 * config.rel_size + 1)
+    path = "bert_tplink.model"
     for epoch in range(config.epoch):
         for step, batch in enumerate(train_data_loader):
             start = time.time()
@@ -480,19 +504,21 @@ if __name__ == "__main__":
             ent_shaking_outputs, head_rel_shaking_outputs, tail_rel_shaking_outputs = model(Variable(batch["batch_input_ids"]).to(device),
                                                                                             Variable(batch["batch_attention_mask"]).to(device),
                                                                                             Variable(batch["batch_token_type_id"]).to(device))
+
             #
             # # print(ent_shaking_outputs.shape, batch_ent2ent_seq_tag.shape)
-            # batch_ent2ent_seq_mask = torch.unsqueeze(batch["batch_ent2ent_seq_mask"], -1)
-            # ent_shaking_outputs *= batch_ent2ent_seq_mask
-            ent_loss = loss_fct(ent_shaking_outputs, Variable(batch["batch_ent2ent_seq_tag"]).to(device))
+            batch_ent2ent_seq_mask = torch.unsqueeze(batch["batch_ent2ent_seq_mask"], -1).to(device)
+            ent_shaking_outputs *= batch_ent2ent_seq_mask
+            ent_loss = loss_fct1(ent_shaking_outputs, Variable(batch["batch_ent2ent_seq_tag"]).to(device))
             #
-            # batch_head2head_seq_mask = torch.unsqueeze(batch["batch_head2head_seq_mask"], -1)
-            # head_rel_shaking_outputs *= batch_head2head_seq_mask
-            head_loss = loss_fct(head_rel_shaking_outputs, Variable(batch["batch_head2head_seq_tag"]).to(device))
+            batch_rel_seq_mask = torch.unsqueeze(batch["batch_rel_seq_mask"], -1).to(device)
+
+            head_rel_shaking_outputs *= batch_rel_seq_mask
+            head_loss = loss_fct2(head_rel_shaking_outputs, Variable(batch["batch_head2head_seq_tag"]).to(device))
             #
             # batch_tail2tail_seq_mask = torch.unsqueeze(batch["batch_tail2tail_seq_mask"], -1)
-            # tail_rel_shaking_outputs *= batch_tail2tail_seq_mask
-            tail_loss = loss_fct(tail_rel_shaking_outputs, Variable(batch["batch_tail2tail_seq_tag"]).to(device))
+            tail_rel_shaking_outputs *= batch_rel_seq_mask
+            tail_loss = loss_fct2(tail_rel_shaking_outputs, Variable(batch["batch_tail2tail_seq_tag"]).to(device))
             #
             loss = w_ent*ent_loss + w_rel*head_loss + w_rel*tail_loss
             loss.backward()
@@ -519,4 +545,5 @@ if __name__ == "__main__":
             if step and step % 10 == 0:
 
                 eval_batch_data(model, batch)
+        # torch.save(model.state_dict(), path)
         break
