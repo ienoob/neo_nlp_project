@@ -395,6 +395,29 @@ d = {
                 "融资租赁费用补贴：对企业支付的融资租赁费用或企业参与金融创新产品支付的融资租赁费用，按同期贷款市场报价利率（LPR）的50%给予补贴，每年每家企业补贴总额不超过10万元"
             ]
         }
+    ],
+    16: [],
+    17: [{
+        "申报时间起始时间": "2020年1月1日",
+        "申报时间截止时间": "12月31日"
+    }],
+    18: [
+        {
+            "企业注册地址": "苏州市"
+        }
+    ],
+    19: [],
+    20: [],
+    22: [
+        {"项目名称": "优秀版权奖",
+         "企业注册地址": "昆山市"},
+        {"项目名称": "昆山市版权示范单位",
+         "企业注册地址": "昆山市"}
+    ],
+    28: [
+        {"项目名称": "330101科技合作与交流"},
+        {"项目名称": "330102“技联苏州日高校”产学研合作项目后补助",
+         "企业注册地址": "苏州"}
     ]
 }
 
@@ -404,14 +427,24 @@ if __name__ == "__main__":
     print(len(file_list))
 
     doc = Document()
-    for file in file_list[15:]:
+    for file in file_list[91:]:
         print(file)
         file_path = path + "\\" + file
         with open(file_path, "r", encoding="utf-8") as f:
             data = f.read()
-        doc.parse_content(data)
+        doc.parse_content_v3(data)
         doc.display_document()
-        doc.parse_content_v2()
+        res = doc.parse_half_struction()
+        print(json.dumps(res, ensure_ascii=False, indent=4))
+
+        doc.parse_precision(res["conditions"])
+        doc.parse_contact_info()
+
+        for k_project in res["project_infos"]:
+            print("项目名称", k_project["project_name"])
+            doc.parse_precision(k_project["conditions"])
+
+
         break
 
     # doc = Document()
