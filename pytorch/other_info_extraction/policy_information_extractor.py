@@ -308,9 +308,9 @@ class Document(object):
             span = span.strip()
             if len(span) == 0:
                 continue
-            if span[:3] == "附件：":
+            if span[:3] == "附件：" or span[:3] == "附件:":
                 span_list[i]["content"].append(span[:3])
-                span = span[3:]
+                span = span[3:].strip()
 
             span = span.replace("(", "（").replace(")", "）")
             span = span.replace("．", ".")
@@ -800,6 +800,11 @@ class Document(object):
             elif span["title_content"] == "联系方式":
                 for sub_content in span["content"]:
                     contact_infos.append(sub_content)
+            elif span["title_content"] == "评定对象和条件":
+                for ci, childi in child.next.items():
+                    if self.content[ci]["title_content"] == "评定条件":
+                        for cii, childii in childi.next.items():
+                            conditions.append(self.content[cii]["title"])
 
         # 标题子目录问题
         if len(conditions) == 0 and len(project_names) == 0 and len(text_materials) == 0 and len(report_processes) == 0:
@@ -1192,7 +1197,60 @@ class Document(object):
                 res["zhibiao_person"].append(("企业资质", "苏州市瞪羚计划企业"))
             if "苏州市“独角兽”培育企业" in condition:
                 res["zhibiao_person"].append(("企业资质", "苏州市“独角兽”培育企业"))
-
+            if "注册资本" in condition:
+                rss = re.findall("项目注册资本(不低于[0-9]+?万元)", condition)
+                for rs in rss:
+                    res["zhibiao"].append(("注册资本", rs))
+            if "实缴出资额" in condition:
+                rs = re.search("实缴出资额(不少于[0-9]+?万元)", condition)
+                if rs:
+                    res["zhibiao_person"].append(("实缴出资额", rs.group(1)))
+            if "内容详见" in condition:
+                rs = re.search("内容详见(.+?)。", condition)
+                if rs:
+                    res["zhibiao_person"].append(("链接文件", rs.group(1)))
+            if "注册资金" in condition:
+                rs = re.search("注册资金在([0-9]+?万元人民币以上)", condition)
+                if rs:
+                    res["zhibiao"].append(("注册资本", rs.group(1)))
+            if "职工人数" in condition:
+                rs = re.search("职工人数一般在([0-9]+?人以上)", condition)
+                if rs:
+                    res["zhibiao"].append(("企业人数", rs.group(1)))
+            if "生产经营" in condition:
+                rs = re.search("生产经营([0-9]+?年以上)", condition)
+                if rs:
+                    res["zhibiao"].append(("经营时间", rs.group(1)))
+            if "企业成立日期" in condition:
+                rs = re.search("企业成立日期在([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日（含）以后)", condition)
+                if rs:
+                    res["zhibiao"].append(("企业成立日期", rs.group(1)))
+                rs = re.search("企业成立日期在([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日（含）-[0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日（含）之间)", condition)
+                if rs:
+                    res["zhibiao"].append(("企业成立日期", rs.group(1)))
+            if "最后一轮投后估值" in condition:
+                rs = re.search("最后一轮投后估值(.+?)，", condition)
+                if rs:
+                    res["zhibiao"].append(("最后一轮投后估值", rs.group(1)))
+            if "最新一轮投后估值" in condition:
+                rs = re.search("最新一轮投后估值([0-9\-]+亿美元或[0-9\-]+亿元人民币)", condition)
+                if rs:
+                    res["zhibiao"].append(("最新一轮投后估值", rs.group(1)))
+            if "未在主板或创业板上市" in condition:
+                res["zhibiao"].append(("企业资质", "未上市"))
+            if "上年度销售收入" in condition:
+                rs = re.search("企业上年度销售收入（不含流水.关联交易）(不低于[0-9]+?万元)", condition)
+                if rs:
+                    res["zhibiao"].append(("上年度销售收入", rs.group(1)))
+            if "三年销售收入" in condition and "净利润平均增长率" in condition:
+                rs = re.search("三年销售收入（不含流水.关联交易）或净利润平均增长率(不低于[0-9]+?%)", condition)
+                if rs:
+                    res["zhibiao"].append(("三年销售收入增长率", rs.group(1)))
+                    res["zhibiao"].append(("净利润平均增长率", rs.group(1)))
+            if "业务收入" in condition:
+                rs = re.search("([0-9]{4}年度)相关业务收入应(不低于[0-9]+?万元)", condition)
+                if rs:
+                    res["zhibiao"].append(("业务收入", (rs.group(1), rs.group(2))))
             # if "年龄" in condition:
             #     rs = re.search("税前年薪(不低于([0-9]+?)万元)", condition)
             #     if rs:
@@ -1206,12 +1264,11 @@ class Document(object):
         contact_infos = []
         for sub_sentence in self.half_struction["contact_infos"]:
             print([sub_sentence])
-            rs = re.search("([\u4e00-\u9fa5\u2003\s])+\s([0-9]{8})", sub_sentence)
+            rs = re.search("([\u4e00-\u9fa5]\u2003[\u4e00-\u9fa5])+\s([0-9]{8})", sub_sentence)
             if rs:
                 contact_infos.append((rs.group(1), rs.group(2)))
         print(contact_infos)
         return contact_infos
-
 
     # 如果数据就是一坨
     def parse_root(self):

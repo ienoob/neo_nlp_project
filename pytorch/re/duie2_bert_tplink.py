@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # Copyright (c) ***
+import json
 import torch
 import argparse
 import torch.nn.functional as F
@@ -15,6 +16,7 @@ from torch.utils.data import Dataset, DataLoader
 from nlp_applications.data_loader import LoaderDuie2Dataset, Document, BaseDataIterator
 from torch.autograd import Variable
 from pytorch.re.roberta_tplink import BertTplinkV2
+from nlp_applications.ie_relation_extraction.evaluation import eval_metrix
 
 data_path = "D:\data\关系抽取"
 data_loader = LoaderDuie2Dataset(data_path, use_word_feature=False)
@@ -24,12 +26,12 @@ bert_model_name = "bert-base-chinese"
 max_len = data_loader.max_seq_len
 shaking_ind2matrix_ind = [(ind, end_ind) for ind in range(max_len) for end_ind in range(ind, max_len)]
 matrix_ind2shaking_ind = [[-1 for _ in range(max_len)] for _ in range(max_len)]
-max_map = {i: [] for i in range(1, max_len+1)}
+max_map = {i: 0 for i in range(1, max_len+1)}
 for shaking_ind, matrix_ind in enumerate(shaking_ind2matrix_ind):
     matrix_ind2shaking_ind[matrix_ind[0]][matrix_ind[1]] = shaking_ind
     for k in max_map.keys():
         if k >= matrix_ind[0] and k >= matrix_ind[1]:
-            max_map[k].append(shaking_ind)
+            max_map[k] = max(max_map[k], shaking_ind+1)
 
 
 
@@ -178,6 +180,20 @@ class Duie2Dataset(Dataset):
                 batch_tail2tail_spans.append(tail2tail_span)
                 batch_gold_answer.append(gold_answer)
 
+
+            if not self.is_train:
+                batch_input_ids = torch.stack(batch_input_ids, dim=0)
+                batch_attention_mask = torch.stack(batch_attention_mask, dim=0)
+                batch_token_type_id = torch.stack(batch_token_type_id, dim=0)
+
+                return {
+                    "batch_input_ids": batch_input_ids,
+                    "batch_attention_mask": batch_attention_mask,
+                    "batch_token_type_id": batch_token_type_id,
+                    "batch_sequence_lens": batch_sequence_lens,
+                    "batch_gold_answer": batch_gold_answer,
+                }
+
             # print("hello inner v2 cost {}".format(time.time()-start))
             start = time.time()
             shaking_seq_len = max_len * (max_len + 1) // 2
@@ -188,6 +204,7 @@ class Duie2Dataset(Dataset):
 
             for batch_id, spots in enumerate(batch_ent2ent_spans):
                 seq_len = batch_sequence_lens[batch_id]
+                # print(max_map[seq_len])
                 batch_ent2ent_seq_mask[batch_id][:max_map[seq_len]] = 1
                 # for iv in range(seq_len):
                 #     # start = iv*max_len+iv
@@ -327,7 +344,7 @@ def extract_res(ent2ent_seq_tag, head2head_seq_tag, tail2tail_seq_tag, seq_len=0
         if end >= seq_len:
             continue
         entity_list.add((start, end))
-    print("entity_res", entity_list)
+    # print("entity_res", entity_list)
 
     h2h_list = []
     for xi in head2head_seq_tag.nonzero(as_tuple=False):
@@ -342,7 +359,7 @@ def extract_res(ent2ent_seq_tag, head2head_seq_tag, tail2tail_seq_tag, seq_len=0
             h2h_list.append((s_start, o_start, xr))
 
     # print(real_h2h)
-    print("h2h_list", h2h_list)
+    # print("h2h_list", h2h_list)
 
     t2t_list = []
     for xi in tail2tail_seq_tag.nonzero(as_tuple=False):
@@ -356,7 +373,7 @@ def extract_res(ent2ent_seq_tag, head2head_seq_tag, tail2tail_seq_tag, seq_len=0
             o_end, s_end = shaking_ind2matrix_ind[xv]
             t2t_list.append((s_end, o_end, xr))
 
-    print("t2t_list", t2t_list)
+    # print("t2t_list", t2t_list)
     predict_list = []
     for ss, os, sr in h2h_list:
         for st, ot, tr in t2t_list:
@@ -367,10 +384,17 @@ def extract_res(ent2ent_seq_tag, head2head_seq_tag, tail2tail_seq_tag, seq_len=0
             if sr != tr:
                 continue
             predict_list.append((ss, st, os, ot, sr))
-    return predict_list
+    return predict_list, entity_list
 
 
 def eval_batch_data(model, batch_data, config=None):
+    sub_entity_hit_num = 0.0
+    sub_entity_pred_num = 0.0
+    sub_entity_gold_num = 0.0
+
+    sub_spo_hit_num = 0.0
+    sub_spo_pred_num = 0.0
+    sub_spo_gold_num = 0.0
     model.eval()
     with torch.no_grad():
         ent_shaking_outputs, head_rel_shaking_outputs, tail_rel_shaking_outputs = model(Variable(batch_data["batch_input_ids"]).to(config.device),
@@ -379,9 +403,17 @@ def eval_batch_data(model, batch_data, config=None):
         # batch_pred_ent_shaking_tag = torch.argmax(ent_shaking_outputs, dim=-1)
         # batch_pred_head_rel_shaking_tag = torch.argmax(head_rel_shaking_outputs, dim=-1)
         # batch_pred_tail_rel_shaking_tag = torch.argmax(tail_rel_shaking_outputs, dim=-1)
-        batch_gold_answer = batch["batch_gold_answer"]
-        batch_sequence_lens = batch["batch_sequence_lens"]
+        batch_gold_answer = batch_data["batch_gold_answer"]
+        batch_sequence_lens = batch_data["batch_sequence_lens"]
         for ind, gold_answer in enumerate(batch_gold_answer):
+
+            entity_real_set = set()
+            for g_ans in gold_answer:
+                entity_real_set.add((g_ans[0], g_ans[1]))
+                entity_real_set.add((g_ans[2], g_ans[3]))
+
+            sub_entity_gold_num += len(entity_real_set)
+            sub_spo_gold_num += len(gold_answer)
 
             seq_len = batch_sequence_lens[ind]
 
@@ -398,12 +430,28 @@ def eval_batch_data(model, batch_data, config=None):
             pred_head_rel_shaking_tag = torch.argmax(head_rel_shaking_outputs[ind], dim=-1)
             pred_tail_rel_shaking_tag = torch.argmax(tail_rel_shaking_outputs[ind], dim=-1)
 
-            rel_list = extract_res(pred_ent_shaking_tag, pred_head_rel_shaking_tag, pred_tail_rel_shaking_tag, seq_len)
+            rel_list, entity_pre_list = extract_res(pred_ent_shaking_tag, pred_head_rel_shaking_tag, pred_tail_rel_shaking_tag, seq_len)
 
-            print(gold_answer)
-            print(rel_list)
+            sub_entity_pred_num += len(entity_pre_list)
 
-def eval_data(model, data_loader):
+            for s_entity in entity_pre_list:
+                if s_entity in entity_real_set:
+                    sub_entity_hit_num += 1
+
+            sub_spo_pred_num += len(rel_list)
+            for g_ans in gold_answer:
+                if g_ans in rel_list:
+                    sub_spo_hit_num += 1
+    return {
+        "sub_entity_hit_num": sub_entity_hit_num,
+        "sub_entity_pred_num": sub_entity_pred_num,
+        "sub_entity_gold_num": sub_entity_gold_num,
+        "sub_spo_hit_num": sub_spo_hit_num,
+        "sub_spo_pred_num": sub_spo_pred_num,
+        "sub_spo_gold_num": sub_spo_gold_num
+    }
+
+def eval_data(model, data_loader, config):
     model.eval()
 
     start_time = time.time()
@@ -415,9 +463,38 @@ def eval_data(model, data_loader):
     spo_pred_num = 0.0
     spo_gold_num = 0.0
     with torch.no_grad():
-        for _, batch in tqdm(enumerate(data_loader), mininterval=5, leave=False, file=sys.stdout):
+        for _, batch in enumerate(data_loader):
             # batch_input_ids, batch_attention_mask, batch_token_type_id, batch_gold_answer = batch
-            eval_batch_data(model, batch, config)
+            res = eval_batch_data(model, batch, config)
+            entity_hit_num += res["sub_entity_hit_num"]
+            entity_pred_num += res["sub_entity_pred_num"]
+            entity_gold_num += res["sub_entity_gold_num"]
+            spo_hit_num += res["sub_spo_hit_num"]
+            spo_pred_num += res["sub_spo_pred_num"]
+            spo_gold_num += res["sub_spo_gold_num"]
+
+            print(res)
+
+    entity_evaluation = eval_metrix(entity_hit_num, entity_gold_num, entity_hit_num)
+    relation_evaluation = eval_metrix(spo_hit_num, spo_gold_num, spo_hit_num)
+    final_res = {
+        "entity_hit_num": entity_hit_num,
+        "entity_pred_num": entity_pred_num,
+        "entity_gold_num": entity_gold_num,
+        "entity_recall": entity_evaluation["recall"],
+        "entity_precision": entity_evaluation["precision"],
+        "entity_f1_value": entity_evaluation["f1_value"],
+        "spo_hit_num": spo_hit_num,
+        "spo_pred_num": spo_pred_num,
+        "spo_gold_num": spo_gold_num,
+        "spo_recall": relation_evaluation["recall"],
+        "spo_precision": relation_evaluation["precision"],
+        "spo_f1_value": relation_evaluation["f1_value"],
+    }
+    print(final_res)
+    with open("bert_tplink_{}.json".format(int(time.time())), "w") as f:
+        f.write(json.dumps(final_res))
+
 
 
 if __name__ == "__main__":
@@ -458,14 +535,19 @@ if __name__ == "__main__":
     model.to(device)
 
     dataset = Duie2Dataset(data_loader.documents, config.pretrain_name, config.rel_size)
-    # dev_dataset = Duie2Dataset(data_loader.dev_documents, config.pretrain_name, config.rel_size, is_train=False)
+    dev_dataset = Duie2Dataset(data_loader.dev_documents, config.pretrain_name, config.rel_size, is_train=False)
 
     train_data_loader = dataset.get_dataloader(config.batch_size,
                                                shuffle=config.shuffle,
                                                pin_memory=config.pin_memory)
-    # test_data_loader = dev_dataset.get_dataloader(config.batch_size,
-    #                                            shuffle=config.shuffle,
-    #                                            pin_memory=config.pin_memory)
+    test_data_loader = dev_dataset.get_dataloader(config.batch_size,
+                                               shuffle=config.shuffle,
+                                               pin_memory=config.pin_memory)
+
+    # for batch in test_data_loader:
+    #     data = batch["batch_gold_answer"]
+    #     for d in data:
+    #         print(len(d))
 
     param_optimizer = list(model.named_parameters())
     param_optimizer = [n for n in param_optimizer if 'pooler' not in n[0]]
@@ -511,13 +593,13 @@ if __name__ == "__main__":
             ent_shaking_outputs *= batch_ent2ent_seq_mask
             ent_loss = loss_fct1(ent_shaking_outputs, Variable(batch["batch_ent2ent_seq_tag"]).to(device))
             #
-            batch_rel_seq_mask = torch.unsqueeze(batch["batch_rel_seq_mask"], -1).to(device)
+            batch_head2head_seq_mask = torch.unsqueeze(batch["batch_head2head_seq_mask"], -1).to(device)
 
-            head_rel_shaking_outputs *= batch_rel_seq_mask
+            head_rel_shaking_outputs *= batch_head2head_seq_mask
             head_loss = loss_fct2(head_rel_shaking_outputs, Variable(batch["batch_head2head_seq_tag"]).to(device))
             #
-            # batch_tail2tail_seq_mask = torch.unsqueeze(batch["batch_tail2tail_seq_mask"], -1)
-            tail_rel_shaking_outputs *= batch_rel_seq_mask
+            batch_tail2tail_seq_mask = torch.unsqueeze(batch["batch_tail2tail_seq_mask"], -1)
+            tail_rel_shaking_outputs *= batch_tail2tail_seq_mask
             tail_loss = loss_fct2(tail_rel_shaking_outputs, Variable(batch["batch_tail2tail_seq_tag"]).to(device))
             #
             loss = w_ent*ent_loss + w_rel*head_loss + w_rel*tail_loss
@@ -542,8 +624,8 @@ if __name__ == "__main__":
             print(
                     u"step {0} / {1} of epoch {2}, train/loss: {3}, cost {4}".format(step, len(train_data_loader),
                                                                        epoch, loss, cost_time))
-            if step and step % 10 == 0:
+            if step and step % 1 == 0:
 
-                eval_batch_data(model, batch)
+                eval_data(model, test_data_loader, config)
         # torch.save(model.state_dict(), path)
         break
