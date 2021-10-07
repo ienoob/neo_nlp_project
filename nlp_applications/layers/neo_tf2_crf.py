@@ -7,282 +7,259 @@
     @File    : neo_crf.py
 
 """
+import warnings
+from typing import Union, Callable, List
+
+import numpy as np
 import tensorflow as tf
+from neo_tf2_crf_utils import Initializer, crf_decode
+from typeguard import typechecked
+"""
+    https://github.com/tensorflow/addons
+"""
 
-class NEOCRF(tf.keras.layers.Layer):
 
-    def __init__(self, num_tags, batch_first):
-        super(NEOCRF, self).__init__()
-        self.num_tags = num_tags
-        self.batch_first = batch_first
-        self.start_transitions = tf.Variable(tf.zeros(num_tags))
-        self.end_transitions = tf.Variable(tf.zeros(num_tags))
-        self.transitions = tf.Variable(tf.zeros(num_tags, num_tags))
+# @tf.keras.utils.register_keras_serializable(package="Addons")
+class CRF(tf.keras.layers.Layer):
+    """Linear chain conditional random field (CRF).
+    Inherits from: `tf.keras.layers.Layer`.
+    References:
+        - [Conditional Random Field](https://en.wikipedia.org/wiki/Conditional_random_field)
+    Example:
+    >>> layer = tfa.layers.CRF(4)
+    >>> inputs = np.random.rand(2, 4, 8).astype(np.float32)
+    >>> decoded_sequence, potentials, sequence_length, chain_kernel = layer(inputs)
+    >>> decoded_sequence.shape
+    TensorShape([2, 4])
+    >>> potentials.shape
+    TensorShape([2, 4, 4])
+    >>> sequence_length
+    <tf.Tensor: shape=(2,), dtype=int64, numpy=array([4, 4])>
+    >>> chain_kernel.shape
+    TensorShape([4, 4])
+    Args:
+        units: Positive integer, dimensionality of the reservoir.
+        chain_initializer: Orthogonal matrix. Default to `orthogonal`.
+        use_boundary: `Boolean`, whether the layer uses a boundary vector. Default to `True`.
+        boundary_initializer: Tensors initialized to 0. Default to `zeros`.
+        use_kernel: `Boolean`, whether the layer uses a kernel weights. Default to `True`.
+    Call Args:
+        inputs: Positive integer, dimensionality of the output space.
+        mask: A boolean `Tensor` of shape `[batch_size, sequence_length]`
+            or `None`. Default to `None`.
+    Raises:
+        ValueError: If input mask doesn't have dim 2 or None.
+        NotImplementedError: If left padding is provided.
+    """
 
-        self.reset_parameters()
+    @typechecked
+    def __init__(
+        self,
+        units: int,
+        chain_initializer: Initializer = "orthogonal",
+        use_boundary: bool = True,
+        boundary_initializer: Initializer = "zeros",
+        use_kernel: bool = True,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
 
-    def reset_parameters(self):
-        pass
+        # setup mask supporting flag, used by base class (the Layer)
+        # because base class's init method will set it to False unconditionally
+        # So this assigned must be executed after call base class's init method
+        self.supports_masking = True
 
-    def forward(self, emissions, tags, mask, reduction):
-        self._validate(emissions, tags=tags, mask=mask)
-        if reduction not in ("none", "sum", "mean", "token_mean"):
-            raise ValueError("invalid reduction: {}".format(reduction))
+        self.units = units  # numbers of tags
 
-        if mask is None:
-            mask = tf.ones(tags, dtype=tf.int32)
+        self.use_boundary = use_boundary
+        self.use_kernel = use_kernel
+        self.chain_initializer = tf.keras.initializers.get(chain_initializer)
+        self.boundary_initializer = tf.keras.initializers.get(boundary_initializer)
 
-        if self.batch_first:
-            emissions = emissions.transpose(0, 1)
-            tags = tags.transpose(0, 1)
-            mask = mask.transpose(0, 1)
+        # weights that work as transfer probability of each tags
+        self.chain_kernel = self.add_weight(
+            shape=(self.units, self.units),
+            name="chain_kernel",
+            initializer=self.chain_initializer,
+        )
 
-            # shape: (batch_size,)
-            numerator = self._compute_score(emissions, tags, mask)
-            # shape: (batch_size,)
-            denominator = self._compute_normalizer(emissions, mask)
-            # shape: (batch_size,)
-            llh = numerator - denominator
+        # weight of <START> to tag probability and tag to <END> probability
+        if self.use_boundary:
+            self.left_boundary = self.add_weight(
+                shape=(self.units,),
+                name="left_boundary",
+                initializer=self.boundary_initializer,
+            )
+            self.right_boundary = self.add_weight(
+                shape=(self.units,),
+                name="right_boundary",
+                initializer=self.boundary_initializer,
+            )
 
-            if reduction == 'none':
-                return llh
-            if reduction == 'sum':
-                return llh.sum()
-            if reduction == 'mean':
-                return llh.mean()
-            assert reduction == 'token_mean'
-            return llh.sum() / mask.float().sum()
+        if self.use_kernel:
+            self._dense_layer = tf.keras.layers.Dense(
+                units=self.units, dtype=self.dtype
+            )
+        else:
+            self._dense_layer = lambda x: tf.cast(x, dtype=self.dtype)
 
-    def decode(self, emissions, mask=None):
-        """Find the most likely tag sequence using Viterbi algorithm.
-
-        Args:
-            emissions (`~torch.Tensor`): Emission score tensor of size
-                ``(seq_length, batch_size, num_tags)`` if ``batch_first`` is ``False``,
-                ``(batch_size, seq_length, num_tags)`` otherwise.
-            mask (`~torch.ByteTensor`): Mask tensor of size ``(seq_length, batch_size)``
-                if ``batch_first`` is ``False``, ``(batch_size, seq_length)`` otherwise.
-
-        Returns:
-            List of list containing the best tag sequence for each batch.
-        """
-        self._validate(emissions, tags=None, mask=mask)
-        if mask is None:
-            mask = emissions.new_ones(emissions.shape[:2], dtype=tf.int32)
-
-        if self.batch_first:
-            emissions = emissions.transpose(0, 1)
-            mask = mask.transpose(0, 1)
-
-        return self._viterbi_decode(emissions, mask)
-
-    def _validate(self, emissions, tags, mask):
-        if emissions.dim() != 3:
-            raise ValueError('emissions must have dimension of 3, got {}'.format(emissions.dim()))
-        if emissions.size(2) != self.num_tags:
-            raise ValueError(
-                'expected last dimension of emissions is {}, got {}'.format(self.num_tags, emissions.size(2)))
-
-        if tags is not None:
-            if emissions.shape[:2] != tags.shape:
-                raise ValueError(
-                    'the first two dimensions of emissions and tags must match,got {} and {}'.format(
-                        tuple(emissions.shape[:2]), tuple(tags.shape)))
+    def call(self, inputs, mask=None):
+        # mask: Tensor(shape=(batch_size, sequence_length), dtype=bool) or None
 
         if mask is not None:
-            if emissions.shape[:2] != mask.shape:
-                raise ValueError(
-                    'the first two dimensions of emissions and mask must match, got {} and {}'.format(
-                        tuple(emissions.shape[:2]), tuple(mask.shape)))
-            no_empty_seq = not self.batch_first and mask[0].all()
-            no_empty_seq_bf = self.batch_first and mask[:, 0].all()
-            if not no_empty_seq and not no_empty_seq_bf:
-                raise ValueError('mask of the first timestep must all be on')
+            if tf.keras.backend.ndim(mask) != 2:
+                raise ValueError("Input mask to CRF must have dim 2 if not None")
 
-    def _compute_score(
-            self, emissions, tags, mask):
-        # emissions: (seq_length, batch_size, num_tags)
-        # tags: (seq_length, batch_size)
-        # mask: (seq_length, batch_size)
-        assert emissions.dim() == 3 and tags.dim() == 2
-        assert emissions.shape[:2] == tags.shape
-        assert emissions.size(2) == self.num_tags
-        assert mask.shape == tags.shape
-        assert mask[0].all()
+        if mask is not None:
+            # left padding of mask is not supported, due the underline CRF function
+            # detect it and report it to user
+            left_boundary_mask = self._compute_mask_left_boundary(mask)
+            first_mask = left_boundary_mask[:, 0]
+            if first_mask is not None and tf.executing_eagerly():
+                no_left_padding = tf.math.reduce_all(first_mask)
+                left_padding = not no_left_padding
+                if left_padding:
+                    raise NotImplementedError(
+                        "Currently, CRF layer do not support left padding"
+                    )
 
-        seq_length, batch_size = tags.shape
-        mask = mask.float()
+        potentials = self._dense_layer(inputs)
 
-        # Start transition score and first emission
-        # shape: (batch_size,)
-        score = self.start_transitions[tags[0]]
-        score += emissions[0, tf.range(batch_size), tags[0]]
+        # appending boundary probability info
+        if self.use_boundary:
+            potentials = self.add_boundary_energy(
+                potentials, mask, self.left_boundary, self.right_boundary
+            )
 
-        for i in range(1, seq_length):
-            # Transition score to next tag, only added if next timestep is valid (mask == 1)
-            # shape: (batch_size,)
-            score += self.transitions[tags[i - 1], tags[i]] * mask[i]
+        sequence_length = self._get_sequence_length(inputs, mask)
 
-            # Emission score for next tag, only added if next timestep is valid (mask == 1)
-            # shape: (batch_size,)
-            score += emissions[i, tf.range(batch_size), tags[i]] * mask[i]
+        decoded_sequence, _ = self.get_viterbi_decoding(potentials, sequence_length)
 
-        # End transition score
-        # shape: (batch_size,)
-        seq_ends = mask.long().sum(dim=0) - 1
-        # shape: (batch_size,)
-        last_tags = tags[seq_ends, tf.range(batch_size)]
-        # shape: (batch_size,)
-        score += self.end_transitions[last_tags]
+        return [decoded_sequence, potentials, sequence_length, self.chain_kernel]
 
-        return score
+    def _get_sequence_length(self, input_, mask):
+        """Currently underline CRF fucntion (provided by
+        tensorflow_addons.text.crf) do not support bi-direction masking (left
+        padding / right padding), it support right padding by tell it the
+        sequence length.
+        this function is compute the sequence length from input and
+        mask.
+        """
+        if mask is not None:
+            sequence_length = self.mask_to_sequence_length(mask)
+        else:
+            # make a mask tensor from input, then used to generate sequence_length
+            input_energy_shape = tf.shape(input_)
+            raw_input_shape = tf.slice(input_energy_shape, [0], [2])
+            alt_mask = tf.ones(raw_input_shape)
 
-    def _compute_normalizer(self, emissions, mask):
-        # emissions: (seq_length, batch_size, num_tags)
-        # mask: (seq_length, batch_size)
-        assert emissions.dim() == 3 and mask.dim() == 2
-        assert emissions.shape[:2] == mask.shape
-        assert emissions.size(2) == self.num_tags
-        assert mask[0].all()
+            sequence_length = self.mask_to_sequence_length(alt_mask)
 
-        seq_length = emissions.size(0)
+        return sequence_length
 
-        # Start transition score and first emission; score has size of
-        # (batch_size, num_tags) where for each batch, the j-th column stores
-        # the score that the first timestep has tag j
-        # shape: (batch_size, num_tags)
-        score = self.start_transitions + emissions[0]
+    def mask_to_sequence_length(self, mask):
+        """compute sequence length from mask."""
+        sequence_length = tf.reduce_sum(tf.cast(mask, tf.int64), 1)
+        return sequence_length
 
-        for i in range(1, seq_length):
-            # Broadcast score for every possible next tag
-            # shape: (batch_size, num_tags, 1)
-            broadcast_score = score.unsqueeze(2)
+    @staticmethod
+    def _compute_mask_right_boundary(mask):
+        """input mask: 0011100, output right_boundary: 0000100."""
+        # shift mask to left by 1: 0011100 => 0111000
+        offset = 1
+        left_shifted_mask = tf.concat(
+            [mask[:, offset:], tf.zeros_like(mask[:, :offset])], axis=1
+        )
 
-            # Broadcast emission score for every possible current tag
-            # shape: (batch_size, 1, num_tags)
-            broadcast_emissions = emissions[i].unsqueeze(1)
+        # NOTE: below code is different from keras_contrib
+        # Original code in keras_contrib:
+        # end_mask = K.cast(
+        #   K.greater(self.shift_left(mask), mask),
+        #   K.floatx()
+        # )
+        # has a bug, confirmed
+        # by the original keras_contrib maintainer
+        # Luiz Felix (github: lzfelix),
 
-            # Compute the score tensor of size (batch_size, num_tags, num_tags) where
-            # for each sample, entry at row i and column j stores the sum of scores of all
-            # possible tag sequences so far that end with transitioning from tag i to tag j
-            # and emitting
-            # shape: (batch_size, num_tags, num_tags)
-            next_score = broadcast_score + self.transitions + broadcast_emissions
+        # 0011100 > 0111000 => 0000100
+        right_boundary = tf.math.greater(
+            tf.cast(mask, tf.int32), tf.cast(left_shifted_mask, tf.int32)
+        )
 
-            # Sum over all possible current tags, but we're in score space, so a sum
-            # becomes a log-sum-exp: for each sample, entry i stores the sum of scores of
-            # all possible tag sequences so far, that end in tag i
-            # shape: (batch_size, num_tags)
-            next_score = tf.function.logsumexp(next_score, dim=1)
+        return right_boundary
 
-            # Set score to the next score if this timestep is valid (mask == 1)
-            # shape: (batch_size, num_tags)
-            score = tf.where(mask[i].unsqueeze(1), next_score, score)
+    @staticmethod
+    def _compute_mask_left_boundary(mask):
+        """input mask: 0011100, output left_boundary: 0010000."""
+        # shift mask to right by 1: 0011100 => 0001110
+        offset = 1
+        right_shifted_mask = tf.concat(
+            [tf.zeros_like(mask[:, :offset]), mask[:, :-offset]], axis=1
+        )
 
-        # End transition score
-        # shape: (batch_size, num_tags)
-        score += self.end_transitions
+        # 0011100 > 0001110 => 0010000
+        left_boundary = tf.math.greater(
+            tf.cast(mask, tf.int32), tf.cast(right_shifted_mask, tf.int32)
+        )
 
-        # Sum (log-sum-exp) over all possible tags
-        # shape: (batch_size,)
-        return tf.function.logsumexp(score, dim=1)
+        return left_boundary
 
-    def _viterbi_decode(self, emissions, mask):
-        # emissions: (seq_length, batch_size, num_tags)
-        # mask: (seq_length, batch_size)
-        assert emissions.dim() == 3 and mask.dim() == 2
-        assert emissions.shape[:2] == mask.shape
-        assert emissions.size(2) == self.num_tags
-        assert mask[0].all()
+    def add_boundary_energy(self, potentials, mask, start, end):
+        def expand_scalar_to_3d(x):
+            # expand tensor from shape (x, ) to (1, 1, x)
+            return tf.reshape(x, (1, 1, -1))
 
-        seq_length, batch_size = mask.shape
+        start = tf.cast(expand_scalar_to_3d(start), potentials.dtype)
+        end = tf.cast(expand_scalar_to_3d(end), potentials.dtype)
+        if mask is None:
+            potentials = tf.concat(
+                [potentials[:, :1, :] + start, potentials[:, 1:, :]], axis=1
+            )
+            potentials = tf.concat(
+                [potentials[:, :-1, :], potentials[:, -1:, :] + end], axis=1
+            )
+        else:
+            mask = tf.keras.backend.expand_dims(tf.cast(mask, start.dtype), axis=-1)
+            start_mask = tf.cast(self._compute_mask_left_boundary(mask), start.dtype)
 
-        # Start transition and first emission
-        # shape: (batch_size, num_tags)
-        score = self.start_transitions + emissions[0]
-        history = []
+            end_mask = tf.cast(self._compute_mask_right_boundary(mask), end.dtype)
+            potentials = potentials + start_mask * start
+            potentials = potentials + end_mask * end
+        return potentials
 
-        # score is a tensor of size (batch_size, num_tags) where for every batch,
-        # value at column j stores the score of the best tag sequence so far that ends
-        # with tag j
-        # history saves where the best tags candidate transitioned from; this is used
-        # when we trace back the best tag sequence
+    def get_viterbi_decoding(self, potentials, sequence_length):
+        # decode_tags: A [batch_size, max_seq_len] matrix, with dtype `tf.int32`
+        decode_tags, best_score = crf_decode(
+            potentials, self.chain_kernel, sequence_length
+        )
 
-        # Viterbi algorithm recursive case: we compute the score of the best tag sequence
-        # for every possible next tag
-        for i in range(1, seq_length):
-            # Broadcast viterbi score for every possible next tag
-            # shape: (batch_size, num_tags, 1)
-            broadcast_score = score.unsqueeze(2)
+        return decode_tags, best_score
 
-            # Broadcast emission score for every possible current tag
-            # shape: (batch_size, 1, num_tags)
-            broadcast_emission = emissions[i].unsqueeze(1)
+    def get_config(self):
+        # used for loading model from disk
+        config = {
+            "units": self.units,
+            "chain_initializer": tf.keras.initializers.serialize(
+                self.chain_initializer
+            ),
+            "use_boundary": self.use_boundary,
+            "boundary_initializer": tf.keras.initializers.serialize(
+                self.boundary_initializer
+            ),
+            "use_kernel": self.use_kernel,
+        }
+        base_config = super().get_config()
+        return {**base_config, **config}
 
-            # Compute the score tensor of size (batch_size, num_tags, num_tags) where
-            # for each sample, entry at row i and column j stores the score of the best
-            # tag sequence so far that ends with transitioning from tag i to tag j and emitting
-            # shape: (batch_size, num_tags, num_tags)
-            next_score = broadcast_score + self.transitions + broadcast_emission
+    def compute_output_shape(self, input_shape):
+        output_shape = input_shape[:2]
+        return output_shape
 
-            # Find the maximum score over all possible current tag
-            # shape: (batch_size, num_tags)
-            next_score, indices = next_score.max(dim=1)
+    def compute_mask(self, input_, mask=None):
+        """keep mask shape [batch_size, max_seq_len]"""
+        return mask
 
-            # Set score to the next score if this timestep is valid (mask == 1)
-            # and save the index that produces the next score
-            # shape: (batch_size, num_tags)
-            score = tf.where(mask[i].unsqueeze(1), next_score, score)
-            history.append(indices)
-
-        # End transition score
-        # shape: (batch_size, num_tags)
-        score += self.end_transitions
-
-        # Now, compute the best path for each sample
-
-        # shape: (batch_size,)
-        seq_ends = mask.long().sum(dim=0) - 1
-        best_tags_list = []
-
-        for idx in range(batch_size):
-            # Find the tag which maximizes the score at the last timestep; this is our best tag
-            # for the last timestep
-            _, best_last_tag = score[idx].max(dim=0)
-            best_tags = [best_last_tag.item()]
-
-            # We trace back where the best last tag comes from, append that to our best tag
-            # sequence, and trace it back again, and so on
-            for hist in reversed(history[:seq_ends[idx]]):
-                best_last_tag = hist[idx][best_tags[-1]]
-                best_tags.append(best_last_tag.item())
-
-            # Reverse the order because we start from the last timestep
-            best_tags.reverse()
-            best_tags_list.append(best_tags)
-
-        return best_tags_list
-
-class_num = 2
-
-class NeoCRFV2(tf.keras.layers.Layer):
-
-
-    def __init__(self):
-        super(NeoCRFV2, self).__init__()
-        self.transitions = tf.Variable()
-
-    def _score_sentence(self, feature, tags):
-
-        pass
-
-    def _viterbi_decode(self, frames):
-        backtrace = []
-
-
-
-
-    def call(self, inputs, *args, **kwargs):
-        pass
-
-
+    @property
+    def _compute_dtype(self):
+        # fixed output dtype from underline CRF functions
+        return tf.int32
