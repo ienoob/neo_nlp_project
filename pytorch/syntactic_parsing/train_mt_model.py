@@ -13,6 +13,7 @@ from nlp_applications.ner.evaluation import extract_entity, eval_metrix_v3
 from transformers import ElectraTokenizer
 from functools import partial
 from torch.utils.data import Dataset, DataLoader
+from pytorch.layers.bert_optimization import BertAdam
 
 
 electra_model_name = "hfl/chinese-electra-small-discriminator"
@@ -156,6 +157,14 @@ class MultiTask2Dataset(Dataset):
         return DataLoader(self, batch_size=batch_size, shuffle=shuffle, collate_fn=self._create_collate_fn(batch_first),
                           num_workers=num_workers, pin_memory=pin_memory, drop_last=drop_last)
 
+
+seg2id = {
+    "O": 0,
+    "B": 1,
+    "I": 2
+}
+
+
 class DataIter(object):
 
     def __init__(self):
@@ -165,11 +174,7 @@ class DataIter(object):
             "<root>": 2
         }
         self.tokenizer = ElectraTokenizer.from_pretrained(electra_model_name)
-        self.seg2id = {
-            "O": 0,
-            "B": 1,
-            "I": 2
-        }
+        self.seg2id = seg2id
         self.pos2id = {
             "<pad>": 0
         }
@@ -615,28 +620,52 @@ def train():
             if i and i % 10 == 0:
                 print(evaluation(model, data_iter, config))
 
-
+id2seg = {v:k for k, v in seg2id.items()}
 def evaluation_v2(model, dev_data_loader, config):
     model.eval()
+    hit_num = 0.0
+    pred_num = 0.0
+    real_num = 0.0
     for batch in dev_data_loader:
         seg_logits = model(
             batch["batch_input_ids"],
             batch["batch_attention_mask"],
             batch["batch_token_type_id"])
 
+        batch_seg_res = batch["batch_seg_res"]
+
         seg_preds = seg_logits.argmax(dim=-1)
         for b, seg_pred in enumerate(seg_preds):
             b_len = batch["batch_seq_lens"][b]
-            seg_pred = seg_pred[:b_len]
+            seg_real_res = batch_seg_res[b]
+            seg_pred = seg_pred[:b_len].cpu().numpy()
 
+            real_num += len(seg_real_res)
+
+            seg_res = []
+            start_pos = 0
             for i, s in enumerate(seg_pred):
-                pass
+                label = id2seg[s]
+                if label == "B":
+                    if i:
+                        seg_res.append((start_pos, i))
+                    start_pos = i
+            seg_res.append((start_pos, b_len))
 
+            for sub_item in seg_res:
+                if sub_item in seg_real_res:
+                    hit_num += 1
+            pred_num += len(seg_res)
+    eval_res = eval_metrix_v3(hit_num, real_num, pred_num)
 
+    final_res = {
+        "hit_num": hit_num,
+        "pred_num": pred_num,
+        "real_num": real_num,
+    }
+    final_res.update(eval_res)
 
-
-
-
+    return final_res
 
 
 def train_v2():
@@ -649,14 +678,20 @@ def train_v2():
     parser.add_argument("--shuffle", type=bool, default=True, required=False)
     parser.add_argument('--pin_memory', type=bool, default=False, required=False)
     parser.add_argument('--hidden_size', type=int, default=256, required=False)
+    parser.add_argument('--learning_rate', type=float, default=1e-5, required=False)
+    parser.add_argument('--warmup_proportion', type=float, default=0.9, required=False)
     parser.add_argument('--seg_size', type=int, default=3, required=False)
-    parser.add_argument('--epoch', type=int, default=10, required=False)
+    parser.add_argument('--epoch', type=int, default=50, required=False)
     parser.add_argument('--device', type=str, default="cpu", required=False)
     config = parser.parse_args()
 
     dataset = MultiTask2Dataset(generator_seg_sentence(), config.bert_model_name)
+    dev_dataset = MultiTask2Dataset(generator_seg_sentence(dev_data_path), config.bert_model_name, is_train=False)
 
     train_data_loader = dataset.get_dataloader(config.batch_size,
+                                               shuffle=config.shuffle,
+                                               pin_memory=config.pin_memory)
+    dev_data_loader = dev_dataset.get_dataloader(config.batch_size,
                                                shuffle=config.shuffle,
                                                pin_memory=config.pin_memory)
 
@@ -671,11 +706,11 @@ def train_v2():
          'weight_decay': 0.01},
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
     ]
-    # optimizer = BertAdam(optimizer_grouped_parameters,
-    #                      lr=config.learning_rate,
-    #                      warmup=config.warmup_proportion,
-    #                      t_total=int(len(dataset)//config.batch_size+1)*config.epoch)
-    optimizer = torch.optim.Adamax(optimizer_grouped_parameters, lr=5e-5)
+    optimizer = BertAdam(optimizer_grouped_parameters,
+                         lr=config.learning_rate,
+                         warmup=config.warmup_proportion,
+                         t_total=int(len(dataset)//config.batch_size+1)*config.epoch)
+    # optimizer = torch.optim.Adamax(optimizer_grouped_parameters, lr=5e-5)
 
     for epoch in range(config.epoch):
         for step, batch in enumerate(train_data_loader):
@@ -694,8 +729,11 @@ def train_v2():
 
             optimizer.step()
             optimizer.zero_grad()
-            break
-        break
+
+            if step % 20 == 0:
+                print("epoch {0} batch {1} loss {2}".format(epoch, step, loss.data.numpy()))
+            if step and step % 100 == 0:
+                print(evaluation_v2(model, dev_data_loader, config))
 
 
 if __name__ == "__main__":
