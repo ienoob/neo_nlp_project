@@ -142,3 +142,5 @@ tempt
 .ipynb_checkpoints
 
 .idea/*
+
+.pt
