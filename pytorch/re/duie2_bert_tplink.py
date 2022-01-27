@@ -544,11 +544,6 @@ if __name__ == "__main__":
                                                shuffle=config.shuffle,
                                                pin_memory=config.pin_memory)
 
-    # for batch in test_data_loader:
-    #     data = batch["batch_gold_answer"]
-    #     for d in data:
-    #         print(len(d))
-
     param_optimizer = list(model.named_parameters())
     param_optimizer = [n for n in param_optimizer if 'pooler' not in n[0]]
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
