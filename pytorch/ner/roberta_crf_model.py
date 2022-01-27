@@ -210,6 +210,7 @@ def evaluation(model, data_iterator):
             true_seq_list = [id2label.get(tag, "O") for tag in true_seq_list]
 
             pre_value = extract_entity(tag_seq_list)
+            print("predict {}".format(pre_value))
             true_value = extract_entity(true_seq_list)
             # print(true_value)
 
