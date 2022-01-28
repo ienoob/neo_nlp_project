@@ -32,4 +32,37 @@ def load_dic():
     return words_dict
 
 
-load_dic()
+# load_dic()
+
+
+
+def generator_seg_sentence(input_data_path=None):
+    with open(input_data_path, "r", encoding="utf-8") as f:
+        train_data = f.read()
+    data_list = []
+    cache = []
+    max_len = 0
+    for train_row in train_data.split("\n"):
+        train_row = train_row.strip()
+        if train_row == "":
+            seg_data = [x[1] for x in cache]
+            raw_data = "".join(seg_data)
+            max_len = max(max_len, len(raw_data))
+
+            data_list.append({"seg_data": seg_data, "raw_data": raw_data})
+            cache = []
+        else:
+            train_row_dep = train_row.split("\t")
+            assert len(train_row_dep) == 8
+            cache.append(train_row_dep)
+    if len(cache) > 1:
+        seg_data = [x[1] for x in cache]
+        raw_data = "".join(seg_data)
+        max_len = max(max_len, len(raw_data))
+
+        data_list.append({"seg_data": seg_data, "raw_data": raw_data})
+    return data_list, max_len
+
+
+
+

@@ -56,6 +56,8 @@ class DuReaderDataset(Dataset):
         return len(self.qa_list)
 
 
+
+
 def sequence_padding(inputs, length=None, padding=0, is_float=False):
     """Numpy函数，将序列padding到同一长度
     """

@@ -943,6 +943,7 @@ class LoaderDuie2Dataset(object):
         self.dev_documents = []
         for i, train_data in enumerate(dev_data_list):
 
+
             self.data_len += 1
             self.dev_data_list.append(train_data)
             self.max_seq_len = max(self.max_seq_len, len(train_data["text"]))
@@ -972,8 +973,8 @@ class LoaderDuie2Dataset(object):
                 except Exception as e:
                     # print(e, train_text, sub_subject)
                     state = 1
-                    print(e)
-                    break
+                    raise (e)
+
 
                 entity_sub = Entity(self.entity2id[sub_subject_type], sub_subject, sub_indx,
                                     sub_indx + len(sub_subject))
@@ -983,13 +984,16 @@ class LoaderDuie2Dataset(object):
 
                 sub_object = spo["object"]["@value"]
                 sub_object_type = spo["object_type"]["@value"]
+                if i == 6416:
+                    if sub_object == "":
+                        sub_object = "中国传媒大学"
+
                 try:
                     obj_indx = train_text.index(sub_object)
                 except Exception as e:
                     # print(e, train_text, sub_object)
                     state = 1
-                    print(e)
-                    break
+                    raise e
                 entity_obj = Entity(self.entity2id[sub_object_type], sub_object, obj_indx,
                                     obj_indx + len(sub_object))
                 self.entity_max_len = max(self.entity_max_len, len(sub_object))

@@ -293,7 +293,8 @@ def evaluate(model, config):
 def load_pretrain_embbeding():
     pretrain_embed = np.zeros((len(extword2id), 100))
     model = Word2Vec.load('word2vec.model')
-    for word in model.wv.vocab:
+
+    for word in model.wv.key_to_index:
         word_id = extword2id[word]
         pretrain_embed[word_id] = model.wv[word]
 

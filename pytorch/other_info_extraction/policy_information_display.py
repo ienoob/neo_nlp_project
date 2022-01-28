@@ -427,7 +427,7 @@ if __name__ == "__main__":
     print(len(file_list))
 
     doc = Document()
-    for file in file_list[91:]:
+    for file in file_list[64:]:
         print(file)
         file_path = path + "\\" + file
         with open(file_path, "r", encoding="utf-8") as f:
