@@ -86,8 +86,12 @@ class AliasDataset(Dataset):
                     full_metrix[full_s+1][0] = 1
                     full_metrix[full_e][1] = 1
 
-
+                # print("full item {}".format(len(full_short_list)))
                 item = np.random.choice(full_short_list)
+                # if len(full_short_list) > 1:
+                #     print(full_short_list)
+                #     print(item)
+                # print(item)
 
                 full_s, full_e, short_s, short_e = item["key"]
                 batch_full_ids.append((full_s + 1, full_e))
@@ -123,7 +127,6 @@ class AliasDataset(Dataset):
                           num_workers=num_workers, pin_memory=pin_memory, drop_last=drop_last)
 
 
-
 def batch_gather(data: torch.Tensor, index: torch.Tensor):
     length = index.shape[0]
     t_index = index.cpu().numpy()
@@ -133,6 +136,7 @@ def batch_gather(data: torch.Tensor, index: torch.Tensor):
         result.append(t_data[i, t_index[i], :])
 
     return torch.from_numpy(np.array(result)).to(data.device)
+
 
 class ConditionalLayerNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-12):
@@ -158,6 +162,7 @@ class ConditionalLayerNorm(nn.Module):
         s = (x - u).pow(2).mean(-1, keepdim=True)
         x = (x - u) / torch.sqrt(s + self.variance_epsilon)
         return weight * x + bias
+
 
 class AliasModel(nn.Module):
 
@@ -192,11 +197,12 @@ class AliasModel(nn.Module):
             return full_pred, short_pred
         else:
             seq_lens = bert_mask.sum(axis=-1)
+            # print("seq_lens", seq_lens)
             full_preds = self.f_activate((self.full(outputs)))
             answer_list = list()
 
             for ii, full_pred in enumerate(full_preds.detach().numpy()):
-                start = np.where(full_pred[:, 0] > 0.6)[0]
+                start = np.where(full_pred[:, 0] > 0.5)[0]
                 end = np.where(full_pred[:, 1] > 0.5)[0]
                 subjects = []
                 for i in start:
@@ -269,7 +275,8 @@ class AliasModel(nn.Module):
                 po_pred = po_pred.reshape(subject_encoder.size(0), -1, 2)
 
                 if flag:
-                    po_pred = po_pred[1, :, :, :].unsqueeze(0)
+                    print(po_pred.shape)
+                    po_pred = po_pred[1, :, :].unsqueeze(0)
             #
                 po_preds.append(po_pred)
             #
@@ -323,28 +330,29 @@ def train():
     for epoch in range(config.epoch):
         model.train()
         for idx, batch_data in enumerate(data_loader):
-            full_pred, short_pred = model(batch_data["batch_input_ids"],
-                      batch_data["batch_token_type_id"],
-                      batch_data["batch_attention_mask"],
-                       batch_data["batch_full_ids"])
-
-            # print(full_pred.shape)
-            # print(short_pred.shape)
-            #
-            # print(batch_data["batch_full_label"].shape)
-            # print(batch_data["batch_short_label"].shape)
-            loss = loss_fn(full_pred, batch_data["batch_full_label"]) + loss_fn(short_pred, batch_data["batch_short_label"])
-            if idx % 10 == 0:
-                loss_value = loss.data.cpu().numpy()
-                print("epoch {0} batch {1} loss value is {2}".format(epoch, idx, loss_value))
-                # loss_list.append(loss_value)
-
-            loss.backward()
-            optimizer.step()
-            model.zero_grad()
-
-        evaluation(model, data_loader)
-        torch.save(model.state_dict(), "{}.pt".format("alias_model"))
+            pass
+        #     full_pred, short_pred = model(batch_data["batch_input_ids"],
+        #               batch_data["batch_token_type_id"],
+        #               batch_data["batch_attention_mask"],
+        #                batch_data["batch_full_ids"])
+        #
+        #     # print(full_pred.shape)
+        #     # print(short_pred.shape)
+        #     #
+        #     # print(batch_data["batch_full_label"].shape)
+        #     # print(batch_data["batch_short_label"].shape)
+        #     loss = 2*loss_fn(full_pred, batch_data["batch_full_label"]) + loss_fn(short_pred, batch_data["batch_short_label"])
+        #     if idx % 10 == 0:
+        #         loss_value = loss.data.cpu().numpy()
+        #         print("epoch {0} batch {1} loss value is {2}".format(epoch, idx, loss_value))
+        #         # loss_list.append(loss_value)
+        #
+        #     loss.backward()
+        #     optimizer.step()
+        #     model.zero_grad()
+        #
+        # evaluation(model, data_loader)
+        # torch.save(model.state_dict(), "{}.pt".format("alias_model"))
 
 # HanLP = hanlp.load(hanlp.pretrained.mtl.CLOSE_TOK_POS_NER_SRL_DEP_SDP_CON_ELECTRA_SMALL_ZH) # 世界最大中文语料库
 # res = HanLP(['集微网消息，工信部国家级创新中心国汽智联、自然资源部直属企业中国地图出版集团以及四维图新等单位近日共同成立了国汽智图（北京）科技有限公司（简称：国汽智图）'])
@@ -471,11 +479,151 @@ def save_load_model():
         #
         # break
 
+def get_input_data(tokenizer, input_sentence):
+    local_max = len(input_sentence)
+    text_word = [t for t in input_sentence if t not in [" "]]
+    codes = tokenizer.encode_plus(text_word,
+                                   return_offsets_mapping=True,
+                                   is_split_into_words=True,
+                                   max_length=local_max,
+                                   truncation=True,
+                                   return_length=True,
+                                   padding="max_length")
+
+    input_ids_ = codes["input_ids"]
+    input_ids = torch.tensor(input_ids_).long()
+    attention_mask = torch.tensor(codes["attention_mask"]).long()
+    token_type_ids = torch.tensor(codes["token_type_ids"]).long()
+
+    batch_input_ids = torch.stack([input_ids], dim=0)
+    batch_attention_mask = torch.stack([attention_mask], dim=0).byte()
+    batch_token_type_id = torch.stack([token_type_ids], dim=0)
+
+    iv = 0
+    jv = 0
+    dv = dict()
+    for s in input_sentence:
+        if s not in [" "]:
+            dv[jv] = iv
+            iv += 1
+        jv += 1
+
+    return {
+        "batch_input_ids": batch_input_ids,
+        "batch_attention_mask": batch_attention_mask,
+        "batch_token_type_id": batch_token_type_id,
+        "batch_text": text_word,
+        "offset": dv
+    }
 
 
+def get_model():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pretrain_name", type=str, default="hfl/chinese-roberta-wwm-ext", required=False)
+    parser.add_argument("--epoch", type=int, default=30, required=False)
+    parser.add_argument('--hidden_size', type=int, default=768, required=False)
+    parser.add_argument("--batch_size", type=int, default=10, required=False)
+    parser.add_argument("--shuffle", type=bool, default=True, required=False)
+    parser.add_argument('--pin_memory', type=bool, default=False, required=False)
+    parser.add_argument("--learning_rate", type=float, default=5e-5, required=False)
+    parser.add_argument('--warmup_proportion', type=float, default=0.9, required=False)
+    parser.add_argument('--entity_size', type=int, default=0, required=False)
 
+    config = parser.parse_args()
+    model = AliasModel(config)
+    model_pt = torch.load("alias_model.pt")
+    model.load_state_dict(model_pt)
 
+    return model
+
+def extractor(input_sentence, model=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pretrain_name", type=str, default="hfl/chinese-roberta-wwm-ext", required=False)
+    parser.add_argument("--epoch", type=int, default=30, required=False)
+    parser.add_argument('--hidden_size', type=int, default=768, required=False)
+    parser.add_argument("--batch_size", type=int, default=10, required=False)
+    parser.add_argument("--shuffle", type=bool, default=True, required=False)
+    parser.add_argument('--pin_memory', type=bool, default=False, required=False)
+    parser.add_argument("--learning_rate", type=float, default=5e-5, required=False)
+    parser.add_argument('--warmup_proportion', type=float, default=0.9, required=False)
+    parser.add_argument('--entity_size', type=int, default=0, required=False)
+
+    config = parser.parse_args()
+    tokenizer = BertTokenizerFast.from_pretrained(config.pretrain_name)
+
+    if model is None:
+        model = AliasModel(config)
+        model_pt = torch.load("alias_model.pt")
+        model.load_state_dict(model_pt)
+
+    p_data = get_input_data(tokenizer, input_sentence)
+
+    sentence_ids, subject_ids, po_tensor = model(p_data["batch_input_ids"],
+                                                 p_data["batch_token_type_id"],
+                                                 p_data["batch_attention_mask"],
+                                                 is_train=False)
+
+    s_len = len(input_sentence)
+    # print(s_len)\\
+    ans = []
+    for ii, sid in enumerate(sentence_ids):
+        print(sid)
+        print(subject_ids[ii])
+        start = subject_ids[ii].cpu().numpy()[0]
+        end = subject_ids[ii].cpu().numpy()[1]
+        # print(batch_data["batch_o_text"][sid])
+        print(start, end, "---------")
+        print("".join(p_data["batch_text"]))
+        subject = "".join(p_data["batch_text"][start - 1:end])
+        print("subject", subject)
+        # s_len = len(batch_data["batch_text"][sid]) + 2
+
+        po_res = po_tensor[ii].detach().numpy()
+        # print(po_res.shape, "++++++++++")
+
+        start = np.where(po_res[:, 0] > 0.6)[0]
+        end = np.where(po_res[:, 1] > 0.5)[0]
+        objects = []
+        for iv in start:
+            jv = end[end >= iv]
+            if iv == 0 or iv > s_len:
+                continue
+
+            if len(jv) > 0:
+                jv = jv[0]
+                if jv > s_len - 2:
+                    continue
+                objects.append((iv, jv))
+
+        for obi, obj in objects:
+            object = "".join(p_data["batch_text"][obi - 1:obj])
+            print("object", object)
+            ans.append("{}->{}".format(subject, object))
+
+    return ans
 
 
 if __name__ == "__main__":
-    train()
+    import pandas as pd
+
+    model = get_model()
+
+    data_path = "D:\data\\alias_sentence(2).csv"
+
+    data = pd.read_csv(data_path)
+    n_df = []
+    iv = 0
+    for idx, dt in data.iterrows():
+        # print(dt["sentence"])
+        # if iv > 20:
+        #     break
+        iv += 1
+        e_ans = extractor(dt["sentence"], model)
+        n_df.append({"sentence": dt["sentence"], "ans": ":".join(e_ans), "true": 1})
+
+    n_df = pd.DataFrame(n_df)
+
+    n_df.to_csv("alias_res.csv", index=False)
+
+
+    # train()

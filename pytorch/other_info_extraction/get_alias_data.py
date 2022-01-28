@@ -580,24 +580,4 @@ for i, dt in enumerate(data_train):
         "golden_answer": true_res
     })
 
-# print(len(train_list))
-# for dt in train_list:
-#     # print(dt["sentence"])
-#     for _, x, y, _ in dt["full_short_list"]:
-#         print(dt["sentence"])
-#         assert x<y
-# sentence = "集微网消息，近日，成都威频科技有限公司（以下简称“威频科技”）正式宣布获得数千万元A 轮融资，本轮融资由国投创业领投，老股东北极光创投继续加码"
-# # print(re.findall("（以下简称“([\u4e00-\u9fa5]+?)”）", sentence))
-# rs = []
-# for pattern in pattern_list:
-#     res = re.findall(pattern, sentence)
-#
-#     if res:
-#         rs += [(r.group(1), r.span(1)) for r in re.finditer(pattern, sentence)]
-#         # data_train.append((dt, ))
-#         # hit += 1
-#         # print(res)
-#         state = 1
-# # if state == 0:
-# print(rs)
-# rs.sort(key=lambda x: x[1][0])
+
