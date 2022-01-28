@@ -51,27 +51,55 @@ class DataIterator(object):
         for tword in jieba.cut(text_raw):
             word_encode_id += [self.data_loader.word2id.get(tword, 1)] * len(tword)
 
-        relation_random = np.random.choice(doc.relation_list)
+        rand_value = np.random.random()
+        if rand_value > 1:
+            sub_list = []
+            obj_list = []
+            for relation in doc.relation_list:
+                sub = relation.sub
+                obj = relation.obj
 
-        sub_loc = (relation_random.sub.start, relation_random.sub.end-1)
-        sub_span[relation_random.sub.start: relation_random.sub.end] = 1
-        for relation in doc.relation_list:
-            sub = relation.sub
-            obj = relation.obj
+                evaluation_label.append((sub.start, sub.end - 1, obj.start, obj.end - 1, relation.id))
+                sub_label[0][relation.sub.start] = 1
+                sub_label[1][relation.sub.end - 1] = 1
 
-            evaluation_label.append((sub.start, sub.end - 1, obj.start, obj.end - 1, relation.id))
-            sub_label[0][relation.sub.start] = 1
-            sub_label[1][relation.sub.end - 1] = 1
-            if relation.sub.start != relation_random.sub.start:
-                continue
-            if relation.sub.end != relation_random.sub.end:
-                continue
+                if (sub.start, sub.end-1) not in sub_list:
+                    sub_list.append((sub.start, sub.end-1))
+                if (obj.start, obj.end-1) not in obj_list:
+                    obj_list.append((obj.start, obj.end-1))
+            fake_p1, fake_p2 = 0, 0
+            while True:
+                fake_p1 = np.random.choice(list(range(len(encoding))))
+                fake_p2 = np.random.choice(list(range(len(encoding))))
+                if fake_p1 > fake_p2:
+                    fake_p1, fake_p2 = fake_p2, fake_p1
+                if (fake_p1, fake_p2) not in sub_list:
+                    break
+            sub_loc = (fake_p1, fake_p2)
+            sub_span[fake_p1: fake_p2+1] = 1
 
-            pre_type = relation.id
-            obj_start = relation.obj.start
-            obj_end = relation.obj.end - 1
-            po_label[pre_type * 2][obj_start] = 1
-            po_label[pre_type * 2 + 1][obj_end] = 1
+        else:
+            relation_random = np.random.choice(doc.relation_list)
+
+            sub_loc = (relation_random.sub.start, relation_random.sub.end-1)
+            sub_span[relation_random.sub.start: relation_random.sub.end] = 1
+            for relation in doc.relation_list:
+                sub = relation.sub
+                obj = relation.obj
+
+                evaluation_label.append((sub.start, sub.end - 1, obj.start, obj.end - 1, relation.id))
+                sub_label[0][relation.sub.start] = 1
+                sub_label[1][relation.sub.end - 1] = 1
+                if relation.sub.start != relation_random.sub.start:
+                    continue
+                if relation.sub.end != relation_random.sub.end:
+                    continue
+
+                pre_type = relation.id
+                obj_start = relation.obj.start
+                obj_end = relation.obj.end - 1
+                po_label[pre_type * 2][obj_start] = 1
+                po_label[pre_type * 2 + 1][obj_end] = 1
 
         return {"encoding": encoding,
                 "pos_encode_id": pos_encode_id,
@@ -220,19 +248,37 @@ def check_po(input_po_value):
 
 def evaluation(batch_data, input_model):
     # check_sub(batch_data["sub_label"].numpy())
-    predict_batch_spo = input_model(batch_data["encoding"],
+    predict_batch_spo, predict_batch_entity = input_model(batch_data["encoding"],
                                     inputs_word=batch_data["word_encode_id"],
                                     inputs_position=batch_data["pos_encode_id"])
     real_batch_spo = batch_data["entity_relation_value"]
     hit_num = 0.0
     predict_num = 0.0
     real_num = 0.0
+
+    entity_hit_num = 0.0
+    entity_predict_num = 0.0
+    entity_real_num = 0.0
+
     predict_wrong_list = []
     recall_fail_list = []
     for b, spo_pred in enumerate(predict_batch_spo):
         # check_po(batch_data["po_label"][b].numpy())
         true_res = real_batch_spo[b]
         real_num += len(true_res)
+
+        pred_entity_res = predict_batch_entity[b]
+        entity_predict_num += len(pred_entity_res)
+
+        true_entity_res = set()
+        for s1, s2, _, _, _ in true_res:
+            true_entity_res.add((s1, s2))
+
+        entity_real_num += len(true_entity_res)
+        for p_entity in pred_entity_res:
+            if p_entity in true_entity_res:
+                entity_hit_num += 1
+
         predict_wrong_row = []
         hit_index = []
 
@@ -252,6 +298,9 @@ def evaluation(batch_data, input_model):
         "hit_num": hit_num,
         "predict_num": predict_num,
         "real_num": real_num,
+        "entity_hit_num":  entity_hit_num,
+        "entity_predict_num": entity_predict_num,
+        "entity_real_num": entity_real_num,
         "predict_wrong": predict_wrong_list,
         "recall_fail": recall_fail_list
     }
@@ -282,6 +331,7 @@ def main():
     parser.add_argument("--word_size", type=int, default=word_size, required=False)
     parser.add_argument("--word_embed_size", type=int, default=64, required=False)
     parser.add_argument("--pos_embed_size", type=int, default=128, required=False)
+    parser.add_argument("--dgcnn_size", type=int, default=128, required=False)
     parser.add_argument("--predicate_num", type=int, default=predicate_num, required=False)
     parser.add_argument("--max_len", type=int, default=data_loader.max_seq_len+1, required=False)
 
@@ -333,14 +383,14 @@ def main():
         return lossv
 
     epoch = 10
-    # model_path = "D:\\tmp\\pointer_net_model\\model"
+    model_path = "D:\\tmp\\pointer_net_model\\model"
     # pm_model.load_weights(model_path)
 
     for ep in range(epoch):
         for batch_i, b_data in enumerate(data_iter.train_iter(batch_num)):
             loss_value = train_step(b_data["encoding"],
-                                    b_data["word_encode_id"],
                                     b_data["pos_encode_id"],
+                                    b_data["word_encode_id"],
                                     b_data["sub_loc"],
                                     b_data["sub_label"],
                                     b_data["po_label"])
@@ -348,7 +398,9 @@ def main():
 
             if batch_i % 100 == 0:
                 print("epoch {0} batch {1} loss value is {2}".format(ep, batch_i, loss_value))
-                print(evaluation(b_data, pm_model))
+            if batch_i and batch_i % 500 == 0:
+                # print(evaluation(b_data, pm_model))
+                pm_model.save_weights(model_path, save_format='tf')
         #         # pm_model.save_weights(model_path, save_format='tf')
         dev_evaluation(data_iter, pm_model)
 

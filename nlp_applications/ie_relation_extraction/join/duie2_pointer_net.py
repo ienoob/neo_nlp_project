@@ -212,21 +212,33 @@ def evaluation(batch_data, input_model):
     hit_num = 0.0
     predict_num = 0.0
     real_num = 0.0
-
+    predict_wrong_list = []
+    recall_fail_list = []
     for b, spo_pred in enumerate(predict_batch_spo):
         # check_po(batch_data["po_label"][b].numpy())
         true_res = real_batch_spo[b]
         real_num += len(true_res)
+        predict_wrong_row = []
+        hit_index = []
 
         predict_num += len(spo_pred)
         for ei, ej, pi, pj, pt in spo_pred:
-            if (ei, ej, pi, pj, pt) in true_res:
+            pre_value = (ei, ej, pi, pj, pt)
+            if pre_value in true_res:
                 hit_num += 1
+                hit_index.append(true_res.index(pre_value))
+            else:
+                predict_wrong_row.append(pre_value)
+        recall_fail_row = [true_res[i] for i in range(len(true_res)) if i not in hit_index]
+        predict_wrong_list.append(predict_wrong_row)
+        recall_fail_list.append(recall_fail_row)
 
     return {
         "hit_num": hit_num,
         "predict_num": predict_num,
-        "real_num": real_num
+        "real_num": real_num,
+        "predict_wrong": predict_wrong_list,
+        "recall_fail": recall_fail_list
     }
 
 
@@ -253,7 +265,7 @@ def main():
     #
     # lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(boundaries, values)
 
-    learing_rate = CustomSchedule(128*3)
+    learing_rate = CustomSchedule(128*3, 4000)
 
     pm_model = PointerNet(vocab_size, embed_size, word_size, word_embed_size, lstm_size, predicate_num)
     data_iter = DataIterator(data_loader)
@@ -304,7 +316,7 @@ def main():
             # print(po_data_mask.shape, po_logits.shape)
             # sub_logits = sub_logits * tf.cast(sub_data_mask, dtype=tf.float32)
             # po_logits = po_logits * tf.cast(po_data_mask, dtype=tf.float32)
-            lossv = loss_func_v2(input_sub_label, sub_logits, sub_data_mask) + 2*loss_func_v2(input_po_label, po_logits, po_data_mask)
+            lossv = 5*loss_func_v2(input_sub_label, sub_logits, sub_data_mask) + loss_func_v2(input_po_label, po_logits, po_data_mask)
             # print(lossv)
         variables = pm_model.variables
         gradients = tape.gradient(lossv, variables)
@@ -313,8 +325,8 @@ def main():
         return lossv
 
     epoch = 10
-    model_path = "D:\\tmp\\pointer_net_model\\model"
-    pm_model.load_weights(model_path)
+    # model_path = "D:\\tmp\\pointer_net_model\\model"
+    # pm_model.load_weights(model_path)
 
     for ep in range(epoch):
         for batch_i, b_data in enumerate(data_iter.train_iter(batch_num)):
@@ -323,7 +335,7 @@ def main():
 
             if batch_i % 100 == 0:
                 print("epoch {0} batch {1} loss value is {2}".format(ep, batch_i, loss_value))
-                print(evaluation(b_data, pm_model))
+                # print(evaluation(b_data, pm_model))
                 # pm_model.save_weights(model_path, save_format='tf')
         dev_evaluation(data_iter, pm_model)
 

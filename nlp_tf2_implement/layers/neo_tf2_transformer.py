@@ -124,3 +124,75 @@ class Decoder(tf.keras.layers.Layer):
         input_value = self.normal_layer3(input_value)
 
         return input_value
+
+
+# class Attention(tf.keras.layers.Layer):
+#     """多头注意力机制
+#     """
+#     def __init__(self, nb_head, size_per_head, q_in_dim=None, k_in_dim=None, v_in_dim=None, **kwargs):
+#
+#         super(Attention, self).__init__(**kwargs)
+#
+#         self.nb_head = nb_head
+#         self.size_per_head = size_per_head
+#         self.out_dim = nb_head * size_per_head
+#         self.multi_head = tf.keras.layers.MultiHeadAttention(nb_head, size_per_head)
+#         self.q_in_dim = q_in_dim
+#         self.k_in_dim = k_in_dim
+#         self.v_in_dim = v_in_dim
+#
+#         self.q_kernel = self.add_weight(name='q_kernel',
+#                                         shape=(self.q_in_dim, self.out_dim),
+#                                         initializer='glorot_normal')
+#         self.k_kernel = self.add_weight(name='k_kernel',
+#                                         shape=(self.k_in_dim, self.out_dim),
+#                                         initializer='glorot_normal')
+#         self.v_kernel = self.add_weight(name='w_kernel',
+#                                         shape=(self.v_in_dim, self.out_dim),
+#                                         initializer='glorot_normal')
+#
+#     # def build(self, input_shape):
+#     #     super(Attention, self).build(input_shape)
+#     #     q_in_dim = input_shape[0][-1]
+#     #     k_in_dim = input_shape[1][-1]
+#     #     v_in_dim = input_shape[2][-1]
+#
+#     def mask(self, x, mask, mode='mul'):
+#         if mask is None:
+#             return x
+#         else:
+#             for _ in range(tf.keras.backend.ndim(x) - tf.keras.backend.ndim(mask)):
+#                 mask = tf.expand_dims(mask, tf.keras.backend.ndim(mask))
+#             if mode == 'mul':
+#                 return x * mask
+#             else:
+#                 return x - (1 - mask) * 1e10
+#     def call(self, q, k, v, v_mask=None, q_mask=None):
+#         v_mask, q_mask = v_mask, q_mask
+#         # 线性变换
+#         # print(q.shape, self.q_kernel.shape)
+#         qw = tf.matmul(q, self.q_kernel)
+#         kw = tf.matmul(k, self.k_kernel)
+#         vw = tf.matmul(v, self.v_kernel)
+#         # 形状变换
+#         qw = tf.reshape(qw, (-1, tf.shape(qw)[1], self.nb_head, self.size_per_head))
+#         kw = tf.reshape(kw, (-1, tf.shape(kw)[1], self.nb_head, self.size_per_head))
+#         vw = tf.reshape(vw, (-1, tf.shape(vw)[1], self.nb_head, self.size_per_head))
+#         # 维度置换
+#         qw = tf.keras.backend.permute_dimensions(qw, (0, 2, 1, 3))
+#         kw = tf.keras.backend.permute_dimensions(kw, (0, 2, 1, 3))
+#         vw = tf.keras.backend.permute_dimensions(vw, (0, 2, 1, 3))
+#         # Attention
+#         a = tf.matmul(qw, kw, transpose_b=True) / self.size_per_head**0.5
+#         a = tf.keras.backend.permute_dimensions(a, (0, 3, 2, 1))
+#         a = self.mask(a, v_mask, 'add')
+#         a = tf.keras.backend.permute_dimensions(a, (0, 3, 2, 1))
+#         a = tf.keras.backend.softmax(a)
+#         # 完成输出
+#         o =  tf.matmul(a, vw)
+#         o = tf.keras.backend.permute_dimensions(o, (0, 2, 1, 3))
+#         o = tf.reshape(o, (-1, tf.shape(o)[1], self.out_dim))
+#         o = self.mask(o, q_mask, 'mul')
+#         return o
+#     def compute_output_shape(self, input_shape):
+#         return (input_shape[0][0], input_shape[0][1], self.out_dim)
