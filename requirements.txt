@@ -1,0 +1,9 @@
+tensorflow-cpu
+transformers
+gensim
+tokenizers
+cython
+typeguard
+beautifulsoup4
+tika
+allennlp
