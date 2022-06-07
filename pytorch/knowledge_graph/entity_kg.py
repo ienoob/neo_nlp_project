@@ -871,6 +871,25 @@ currency_entity = {
     "美元": {},
 }
 
+
+def valid_kh(input_str):
+    stack = []
+    for s in input_str:
+        if s in ["(", "（"]:
+            stack.append(s)
+        elif s == ")":
+            if len(stack) == 0:
+                return False
+            if stack[-1] != "(":
+                return False
+            stack.pop()
+        elif s == "）":
+            if len(stack) == 0:
+                return False
+            if stack[-1] != "（":
+                return False
+    return len(stack) == 0
+
 def is_not_valid(input_str, include_person=False):
     if len(input_str) < 2:
         return True
@@ -890,23 +909,35 @@ def is_not_valid(input_str, include_person=False):
         return True
     if input_str in currency_entity:
         return True
-    if input_str[-1] == "（":
+    if input_str[0] in ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑩", "⑨"]:
         return True
-    if input_str[0] in ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "?", "⑩", "⑨"]:
+    if input_str[0] in ["，", "?", "©"]:
         return True
+
+    if input_str[0] in ["&", "#", "*", "%", "@", "$", "＃", " ", '\uf0a7']:
+        return True
+        #     print([input_str[:2]],)
+    if input_str[:2] in ['️\xa0']:
+        return True
+    if input_str[-1] in ["；", "－", "&", "*"]:
+        return True
+    if input_str[-3:] in ["CEO"]:
+        return True
+
+    if input_str[-1] in ["-", "（", "。"]:
+        return True
+
+    if not valid_kh(input_str):
+        return True
+
     if "（" in input_str and "）" not in input_str:
         return True
     if "（" not in input_str and "）" in input_str:
         return True
-    if input_str[0] in ["，"]:
-        return True
-        # mention错误
-    if input_str[-1] in ["-"]:
-        return True
-        # 个人
+    # 个人
     if input_str[-2:] == "个人":
         return True
-        # 个人
+    # 个人
     if input_str[-2:] == "先生":
         return True
         # 指向不明
@@ -918,6 +949,7 @@ def is_not_valid(input_str, include_person=False):
         # mention 错误 普罗资本旗下
     if input_str[-2:] == "旗下":
         return True
+
         # mention 错误 中信产业基金旗下基金
     if input_str[-4:] == "旗下基金":
         return True
@@ -955,22 +987,19 @@ def is_not_valid(input_str, include_person=False):
     if re.match("\d{1,4}年", input_str):
         return True
 
-    if input_str[-1] == "。":
-        return True
         # 高秉强教授
     if input_str[-2:] == "教授":
         return True
         # 4家子公司
     if re.match("\d{1,2}家子公司", input_str):
         return True
+
         # 7月
     if re.match("\d{1,2}月", input_str):
         return True
     if "📸️" in input_str:
         return True
     if "💇" in input_str:
-        return True
-    if input_str[0] in ["©"]:
         return True
     if "\n" in input_str:
         return True
@@ -1072,4 +1101,4 @@ def is_not_valid(input_str, include_person=False):
 
 
 if __name__ == "__main__":
-    is_not_valid()
+    is_not_valid("2019年")
