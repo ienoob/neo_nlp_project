@@ -16,6 +16,8 @@ headers = {
 
 path = "invest_data4"
 for i, file in enumerate(os.listdir(path)):
+    if i < 764:
+        continue
     print("data idx {}".format(i))
     file_path = path + "//" + file
 
@@ -41,6 +43,10 @@ for i, file in enumerate(os.listdir(path)):
 
     subs = soup.find_all(name="tr", attrs={"class": "table_bg2"})
     for item in subs:
+        if item.find(name="td") is None:
+            continue
+        if item.find(name="td").find("a") is None:
+            continue
         url = item.find(name="td").find("a")["href"]
         r = requests.get(url, headers=headers)
 

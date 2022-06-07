@@ -13,6 +13,7 @@ import time
 from urllib import parse
 data_path = "D:\\xxxx\\investee.json"
 data_path = "D:\\xxxx\\po_entity.json"
+data_path = "D:\\xxxx\\public_opinion_company_label.json"
 # data_path = "D:\\xxxx\\investor_entity.json"
 # data_path = "D:\\xxxx\\investee_entity.json"
 
@@ -34,7 +35,7 @@ def spider():
         if k in ["AUX"]:
             i += 1
             continue
-        path = "G:\download2\\baike\{}.html".format(k)
+        path = "F:\download2\\baike\{}.html".format(k)
         if os.path.exists(path):
             i += 1
             continue
@@ -48,7 +49,7 @@ def spider():
         if k not in content:
             break
         # print(r.content.decode())
-        with open("G:\download2\\baike\{}.html".format(k), "w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         i += 1
         time.sleep(10)
@@ -116,4 +117,4 @@ def spider_():
 
 
 if __name__ == "__main__":
-    spider_()
+    spider()

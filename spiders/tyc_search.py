@@ -20,6 +20,7 @@ from urllib import parse
 data_path = "D:\\xxxx\\investee.json"
 data_path = "D:\\xxxx\\po_entity.json"
 data_path = "D:\\xxxx\\invest_new.json"
+data_path = "D:\\xxxx\\public_opinion_company_label.json"
 # data_path = "D:\\xxxx\\investee_entity.json"
 # data_path = "D:\\xxxx\\investor_entity.json"
 with open(data_path, "r") as f:
@@ -43,7 +44,7 @@ def spider():
             i += 1
             continue
         print("{} start search".format(k))
-        path = "G:\download2\\tyc\\{}.html".format(k)
+        path = "F:\download2\\tyc\\{}.html".format(k)
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 html = f.read()
@@ -83,7 +84,7 @@ def spider():
                 f.write(fail_dump)
             time.sleep(random.randint(12, 24))
             continue
-        with open("G:\download2\\tyc\\{}.html".format(k), "w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         print("{} complete search".format(k))
         i += 1

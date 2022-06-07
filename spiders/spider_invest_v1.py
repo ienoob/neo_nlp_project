@@ -12,7 +12,7 @@ headers = {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "zh-CN,zh;q=0.8"}
 
-for i in range(10000, 100000):
+for i in range(34231, 100000):
     url = "https://www.trjcn.com/org/detail_{}.html".format(i)
 
     r = requests.get(url, headers=headers)

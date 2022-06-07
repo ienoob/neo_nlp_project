@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 from spiders.base_spider import get_commom_content
 
 def spider():
-    path = "G:\download2\\baike\\"
+    path = "F:\download2\\baike\\"
     for file in os.listdir(path):
         # file = "薇雅.html"
         item_key = file[:-5]
@@ -40,7 +40,7 @@ def spider():
             if url[:5] == "/item":
                 url = "https://baike.baidu.com" + url
             url_id = hashlib.md5(url.encode("utf-8")).hexdigest()
-            save_path = "G:\download\\baidubaike\\{}.html".format(url_id)
+            save_path = "F:\download\\baidubaike\\{}.html".format(url_id)
 
             if os.path.exists(save_path):
                 continue
