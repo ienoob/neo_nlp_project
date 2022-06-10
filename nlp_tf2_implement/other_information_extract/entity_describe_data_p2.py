@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) ***
 import os
-from entity_describe_data_p1 import d
+from nlp_tf2_implement.other_information_extract.entity_describe_data_p1 import d
 from utils.neo_function import split_str
 from nlp_applications.data_loader import load_json_line_data
 

@@ -61,7 +61,7 @@ for i in range(1040, 10000):
     if r.status_code == 200:
         data = r.content.decode("utf-8")
         file_md5_indx = hashlib.md5(data.encode()).hexdigest()
-        with open("invest_data3/{}.html".format(file_md5_indx), "w", encoding="utf-8") as f:
+        with open("F:/download2/invest_data3/{}.html".format(file_md5_indx), "w", encoding="utf-8") as f:
             f.write(data)
     elif r.status_code == 403:
         break

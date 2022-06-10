@@ -17,9 +17,9 @@ import re
 from ltp import LTP
 import numpy as np
 import hanlp
-from nlp_applications.data_loader import load_json_line_data
-from nlp_applications.utils import load_word_vector
-from nlp_applications.ner.evaluation import metrix_v2
+# from nlp_applications.data_loader import load_json_line_data
+# from nlp_applications.utils import load_word_vector
+# from nlp_applications.ner.evaluation import metrix_v2
 from utils.neo_function import split_str
 from entity_describe_data_p1 import d
 from numpy import dot

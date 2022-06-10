@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) ***
 # import hanlp
+import json
 import torch
 import argparse
 import numpy as np
@@ -10,7 +11,7 @@ from functools import partial
 from torch.utils.data import Dataset, DataLoader
 from pytorch.layers.bert_optimization import BertAdam
 from transformers import BertModel, BertTokenizer, BertTokenizerFast
-from pytorch.other_info_extraction.get_alias_data import train_list
+from pytorch.other_info_extraction.get_alias_data_v3 import train_list
 from nlp_applications.ner.evaluation import extract_entity, eval_metrix_v3
 
 
@@ -87,16 +88,21 @@ class AliasDataset(Dataset):
                     full_metrix[full_e][1] = 1
 
                 # print("full item {}".format(len(full_short_list)))
-                item = np.random.choice(full_short_list)
-                # if len(full_short_list) > 1:
-                #     print(full_short_list)
-                #     print(item)
-                # print(item)
+                if len(full_short_list):
+                    item = np.random.choice(full_short_list)
+                    # if len(full_short_list) > 1:
+                    #     print(full_short_list)
+                    #     print(item)
+                    # print(item)
 
-                full_s, full_e, short_s, short_e = item["key"]
-                batch_full_ids.append((full_s + 1, full_e))
-                short_metrix[short_s+1][0] = 1
-                short_metrix[short_e][1] = 1
+                    full_s, full_e, short_s, short_e = item["key"]
+                    batch_full_ids.append((full_s + 1, full_e))
+                    short_metrix[short_s+1][0] = 1
+                    short_metrix[short_e][1] = 1
+                else:
+                    batch_full_ids.append((0, 0))
+                    short_metrix[0][0] = 1
+                    short_metrix[0][1] = 1
                 batch_full_metrix.append(full_metrix)
                 batch_short_metrix.append(short_metrix)
 
@@ -202,7 +208,7 @@ class AliasModel(nn.Module):
             answer_list = list()
 
             for ii, full_pred in enumerate(full_preds.detach().numpy()):
-                start = np.where(full_pred[:, 0] > 0.5)[0]
+                start = np.where(full_pred[:, 0] > 0.6)[0]
                 end = np.where(full_pred[:, 1] > 0.5)[0]
                 subjects = []
                 for i in start:
@@ -231,8 +237,8 @@ class AliasModel(nn.Module):
                     token_type_id = torch.zeros((len(subjects), token_id.size(1)), dtype=torch.long)
                     for index, (start, end) in enumerate(subjects):
                         token_type_id[index, start:end + 1] = 1
-                    sentence_ids.append(ii)
-            #         # pass_ids.append(pass_tensor)
+                        sentence_ids.append(ii)
+                    # pass_ids.append(pass_tensor)
                     subject_ids.append(torch.tensor(subjects, dtype=torch.long))
                     bert_encoders.append(new_bert_encoder)
             #
@@ -244,51 +250,19 @@ class AliasModel(nn.Module):
             bert_encoders = torch.cat(bert_encoders).to(outputs.device)
             subject_ids = torch.cat(subject_ids).to(outputs.device)
             #
-            flag = False
-            split_heads = 1024
-            #
-            bert_encoders_ = torch.split(bert_encoders, split_heads, dim=0)
-            # pass_ids_ = torch.split(pass_ids, split_heads, dim=0)
-            subject_encoder_ = torch.split(subject_ids, split_heads, dim=0)
-            # print(subject_encoder_.shape)
-            #
-            po_preds = list()
-            for i in range(len(bert_encoders_)):
-                bert_encoders = bert_encoders_[i]
-            #     pass_ids = pass_ids_[i]
-                subject_encoder = subject_encoder_[i]
-                # print(subject_encoder.shape)
-            #
-                if bert_encoders.size(0) == 1:
-                    flag = True
-                    bert_encoders = bert_encoders.expand(2, bert_encoders.size(1), bert_encoders.size(2))
-                    subject_encoder = subject_encoder.expand(2, subject_encoder.size(1))
-                sub_start_encoder = batch_gather(bert_encoders, subject_encoder[:, 0])
-                sub_end_encoder = batch_gather(bert_encoders, subject_encoder[:, 1])
-                subject = torch.cat([sub_start_encoder, sub_end_encoder], 1)
-                context_encoder = self.layer_norm(bert_encoders, subject)
 
-                # print(subject.shape)
-            #
-                po_pred = self.short(context_encoder)
-                # print(po_pred.shape)
-                po_pred = po_pred.reshape(subject_encoder.size(0), -1, 2)
+            sub_start_encoder = batch_gather(bert_encoders, subject_ids[:, 0])
+            sub_end_encoder = batch_gather(bert_encoders, subject_ids[:, 1])
+            subject = torch.cat([sub_start_encoder, sub_end_encoder], 1)
+            context_encoder = self.layer_norm(bert_encoders, subject)
 
-                if flag:
-                    print(po_pred.shape)
-                    po_pred = po_pred[1, :, :].unsqueeze(0)
-            #
-                po_preds.append(po_pred)
-            #
-            po_tensor = torch.cat(po_preds).to(bert_encoders.device)
+            po_tensor = self.short(context_encoder)
+            # print(po_pred.shape)
+            po_tensor = po_tensor.reshape(subject_ids.size(0), -1, 2)
             # print(po_tensor.shape, "++")
             po_tensor = nn.Sigmoid()(po_tensor)
+
             return sentence_ids, subject_ids, po_tensor
-
-
-class AliasModelV2(nn.Module):
-    def __init__(self, config):
-        super(AliasModelV2, self).__init__()
 
 
 
@@ -330,29 +304,29 @@ def train():
     for epoch in range(config.epoch):
         model.train()
         for idx, batch_data in enumerate(data_loader):
-            pass
-        #     full_pred, short_pred = model(batch_data["batch_input_ids"],
-        #               batch_data["batch_token_type_id"],
-        #               batch_data["batch_attention_mask"],
-        #                batch_data["batch_full_ids"])
-        #
-        #     # print(full_pred.shape)
-        #     # print(short_pred.shape)
-        #     #
-        #     # print(batch_data["batch_full_label"].shape)
-        #     # print(batch_data["batch_short_label"].shape)
-        #     loss = 2*loss_fn(full_pred, batch_data["batch_full_label"]) + loss_fn(short_pred, batch_data["batch_short_label"])
-        #     if idx % 10 == 0:
-        #         loss_value = loss.data.cpu().numpy()
-        #         print("epoch {0} batch {1} loss value is {2}".format(epoch, idx, loss_value))
-        #         # loss_list.append(loss_value)
-        #
-        #     loss.backward()
-        #     optimizer.step()
-        #     model.zero_grad()
-        #
-        # evaluation(model, data_loader)
-        # torch.save(model.state_dict(), "{}.pt".format("alias_model"))
+            full_pred, short_pred = model(batch_data["batch_input_ids"],
+                      batch_data["batch_token_type_id"],
+                      batch_data["batch_attention_mask"],
+                       batch_data["batch_full_ids"])
+
+            # print(full_pred.shape)
+            # print(short_pred.shape)
+            #
+            # print(batch_data["batch_full_label"].shape)
+            # print(batch_data["batch_short_label"].shape)
+            loss = 2*loss_fn(full_pred, batch_data["batch_full_label"]) + loss_fn(short_pred, batch_data["batch_short_label"])
+            if idx % 10 == 0:
+                loss_value = loss.data.cpu().numpy()
+                print("epoch {0} batch {1} loss value is {2}".format(epoch, idx, loss_value))
+                # loss_list.append(loss_value)
+
+            loss.backward()
+            optimizer.step()
+            model.zero_grad()
+
+        evaluation(model, data_loader)
+        torch.save(model.state_dict(), "{}.pt".format("alias_model"))
+        # break
 
 # HanLP = hanlp.load(hanlp.pretrained.mtl.CLOSE_TOK_POS_NER_SRL_DEP_SDP_CON_ELECTRA_SMALL_ZH) # 世界最大中文语料库
 # res = HanLP(['集微网消息，工信部国家级创新中心国汽智联、自然资源部直属企业中国地图出版集团以及四维图新等单位近日共同成立了国汽智图（北京）科技有限公司（简称：国汽智图）'])
@@ -380,7 +354,7 @@ def evaluation(model, data_loader):
 
             po_res = po_tensor[ii].detach().numpy()
 
-            start = np.where(po_res[:, 0] > 0.6)[0]
+            start = np.where(po_res[:, 0] > 0.5)[0]
             end = np.where(po_res[:, 1] > 0.5)[0]
             objects = []
             for iv in start:
@@ -402,8 +376,12 @@ def evaluation(model, data_loader):
         for ii, s_res in enumerate(batch_res):
             pred_num += len(s_res)
             true_num += len(batch_data["batch_golden_answer"][ii])
+            # print(s_res)
+            # print(batch_data["batch_golden_answer"][ii])
 
             for item in s_res:
+                # print(item)
+                # print(batch_data["batch_golden_answer"][ii])
                 if item in batch_data["batch_golden_answer"][ii]:
                     hit_num += 1
 
@@ -411,8 +389,6 @@ def evaluation(model, data_loader):
     print("true_num: {}".format(true_num))
     print("hit_num: {}".format(hit_num))
     print(eval_metrix_v3(hit_num, true_num, pred_num))
-
-
 
 
 def save_load_model():
@@ -439,45 +415,46 @@ def save_load_model():
     data_loader = train_dataset.get_dataloader(config.batch_size,
                                                shuffle=config.shuffle,
                                                pin_memory=config.pin_memory)
-    for idx, batch_data in enumerate(data_loader):
-        model.eval()
-        sentence_ids, subject_ids, po_tensor = model(batch_data["batch_input_ids"],
-                                      batch_data["batch_token_type_id"],
-                                      batch_data["batch_attention_mask"],
-                                      is_train=False)
-
-        print(po_tensor.shape, "xxxx")
-        for ii, sid in enumerate(sentence_ids):
-            print(sid)
-            print(subject_ids[ii])
-            start = subject_ids[ii].cpu().numpy()[0]
-            end = subject_ids[ii].cpu().numpy()[1]
-            print(batch_data["batch_o_text"][sid])
-            print("".join(batch_data["batch_text"][sid][start-1:end]))
-            s_len = len(batch_data["batch_text"][sid])+2
-
-            po_res = po_tensor[ii].detach().numpy()
-            print(po_res.shape, "++++++++++")
-
-            start = np.where(po_res[:,0] > 0.6)[0]
-            end = np.where(po_res[:,1] > 0.5)[0]
-            objects = []
-            for iv in start:
-                jv = end[end >= iv]
-                if iv == 0 or iv > s_len:
-                    continue
-
-                if len(jv) > 0:
-                    jv = jv[0]
-                    if jv > s_len - 2:
-                        continue
-                    objects.append((iv, jv))
-
-            for obi, obj in objects:
-                print("".join(batch_data["batch_text"][sid][obi-1:obj]))
-        #
-        #
-        # break
+    evaluation(model, data_loader)
+    # for idx, batch_data in enumerate(data_loader):
+    #     model.eval()
+    #     sentence_ids, subject_ids, po_tensor = model(batch_data["batch_input_ids"],
+    #                                   batch_data["batch_token_type_id"],
+    #                                   batch_data["batch_attention_mask"],
+    #                                   is_train=False)
+    #
+    #     # print(po_tensor.shape, "xxxx")
+    #     for ii, sid in enumerate(sentence_ids):
+    #         print(sid)
+    #         print(subject_ids[ii])
+    #         start = subject_ids[ii].cpu().numpy()[0]
+    #         end = subject_ids[ii].cpu().numpy()[1]
+    #         print(batch_data["batch_o_text"][sid])
+    #         print("".join(batch_data["batch_text"][sid][start-1:end]))
+    #         s_len = len(batch_data["batch_text"][sid])+2
+    #
+    #         po_res = po_tensor[ii].detach().numpy()
+    #         print(po_res.shape, "++++++++++")
+    #
+    #         start = np.where(po_res[:,0] > 0.6)[0]
+    #         end = np.where(po_res[:,1] > 0.5)[0]
+    #         objects = []
+    #         for iv in start:
+    #             jv = end[end >= iv]
+    #             if iv == 0 or iv > s_len:
+    #                 continue
+    #
+    #             if len(jv) > 0:
+    #                 jv = jv[0]
+    #                 if jv > s_len - 2:
+    #                     continue
+    #                 objects.append((iv, jv))
+    #
+    #         for obi, obj in objects:
+    #             print("".join(batch_data["batch_text"][sid][obi-1:obj]))
+    #     #
+    #     #
+    #     # break
 
 def get_input_data(tokenizer, input_sentence):
     local_max = len(input_sentence)
@@ -504,7 +481,7 @@ def get_input_data(tokenizer, input_sentence):
     dv = dict()
     for s in input_sentence:
         if s not in [" "]:
-            dv[jv] = iv
+            dv[iv] = jv
             iv += 1
         jv += 1
 
@@ -558,6 +535,8 @@ def extractor(input_sentence, model=None):
 
     p_data = get_input_data(tokenizer, input_sentence)
 
+    offset = p_data["offset"]
+
     sentence_ids, subject_ids, po_tensor = model(p_data["batch_input_ids"],
                                                  p_data["batch_token_type_id"],
                                                  p_data["batch_attention_mask"],
@@ -566,6 +545,7 @@ def extractor(input_sentence, model=None):
     s_len = len(input_sentence)
     # print(s_len)\\
     ans = []
+    ans_full = []
     for ii, sid in enumerate(sentence_ids):
         print(sid)
         print(subject_ids[ii])
@@ -581,11 +561,11 @@ def extractor(input_sentence, model=None):
         po_res = po_tensor[ii].detach().numpy()
         # print(po_res.shape, "++++++++++")
 
-        start = np.where(po_res[:, 0] > 0.6)[0]
-        end = np.where(po_res[:, 1] > 0.5)[0]
+        start_po = np.where(po_res[:, 0] > 0.6)[0]
+        end_po = np.where(po_res[:, 1] > 0.5)[0]
         objects = []
-        for iv in start:
-            jv = end[end >= iv]
+        for iv in start_po:
+            jv = end_po[end_po >= iv]
             if iv == 0 or iv > s_len:
                 continue
 
@@ -599,31 +579,44 @@ def extractor(input_sentence, model=None):
             object = "".join(p_data["batch_text"][obi - 1:obj])
             print("object", object)
             ans.append("{}->{}".format(subject, object))
+            print(input_sentence[offset[start - 1]:offset[end-1]+1])
+            print(input_sentence[offset[obi - 1]:offset[obj-1] + 1])
+            ans_full.append({
+                "name": input_sentence[offset[start - 1]:offset[end-1]+1],
+                "alias": input_sentence[offset[obi - 1]:offset[obj-1] + 1],
+                "name_idx": [offset[start - 1], offset[end-1]],
+                "alias_idx": [offset[obi - 1], offset[obj-1]]
+            })
 
-    return ans
+    return ans, ans_full
 
 
 if __name__ == "__main__":
-    import pandas as pd
+    # import pandas as pd
+    #
+    # model = get_model()
+    # #
+    # data_path = "D:\data\\alias_sentence(2).csv"
+    #
+    # data = pd.read_csv(data_path)
+    # n_df = []
+    # iv = 0
+    # for idx, dt in data.iterrows():
+    #     if len(dt["sentence"])>500:
+    #         continue
+    #     # if iv > 20:
+    #     #     break
+    #     iv += 1
+    #     e_ans, e_ans_full = extractor(dt["sentence"], model)
+    #     n_df.append({"sentence": dt["sentence"], "ans": ":".join(e_ans), "true": 1,  "ans_idx": json.dumps(e_ans_full, ensure_ascii=False)})
+    #     print("{}/{} complete".format(idx, data.shape[0]))
+    #
+    # n_df = pd.DataFrame(n_df)
+    #
+    # n_df.to_csv("alias_res.csv", index=False)
 
-    model = get_model()
-
-    data_path = "D:\data\\alias_sentence(2).csv"
-
-    data = pd.read_csv(data_path)
-    n_df = []
-    iv = 0
-    for idx, dt in data.iterrows():
-        # print(dt["sentence"])
-        # if iv > 20:
-        #     break
-        iv += 1
-        e_ans = extractor(dt["sentence"], model)
-        n_df.append({"sentence": dt["sentence"], "ans": ":".join(e_ans), "true": 1})
-
-    n_df = pd.DataFrame(n_df)
-
-    n_df.to_csv("alias_res.csv", index=False)
+    # df = pd.read_csv("alias_res.csv", encoding="utf-8")
+    # df.to_csv("alias_gbk.csv", index=False, encoding="gbk")
 
 
-    # train()
+    train()

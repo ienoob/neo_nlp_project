@@ -577,7 +577,13 @@ for i, dt in enumerate(data_train):
         "sentence": [s for s in sentence if s not in [" "]],
         "full_short_list": full_short_list,
         "orient_sentence": sentence,
-        "golden_answer": true_res
+        "golden_answer": true_res,
+        "offset": dv
     })
+import json
+train_json = json.dumps(train_list)
+
+with open("D:\data\self-data\\alias_train_v1.json", "w", encoding="utf-8") as f:
+    f.write(train_json)
 
 

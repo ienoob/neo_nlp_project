@@ -13,7 +13,7 @@ headers = {
         "Accept-Language": "zh-CN,zh;q=0.8"}
 
 # 33723 到底了
-for i in range(33723, 100000):
+for i in range(1, 100000):
     url = "https://zdb.pedaily.cn/company/show{}/".format(i)
     r = requests.get(url, headers=headers)
     # print(r.content.decode("utf-8"))

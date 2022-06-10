@@ -2,7 +2,7 @@
 任务目标是从文本中抽取三元组信息，即（subject, predicate, object）。英文名称为relation extract 或 relation detect
 
 # 方法
-1）基于模板的方法，人工构建正则或者句法的规则。 优点是precision 高，在特定领域效果会很好，缺点是recall会比较低，无法移植到到其他领域
+1）基于模板的方法，人工构建正则或者句法的规则。 优点是precision 高，在特定领域效果会很好，缺点是recall会比较低，无法移植到到其他领域  
 2）基于统计学的方法，将任务分为两部分，分别是实体抽取和关系分类。该方法需要人工构建特征。  
 3）基于深度学习的方法， 这是当前的主流方法，不需要人工构建特征
     -- pipeline 方法  该方法将任务分为两部分进行，存在错误累积问题。但是有一篇文章用pipeline 方法取得state of art 效果
@@ -17,6 +17,7 @@
 6）novel_tagging [5]
 7) PURE [6]  https://github.com/princeton-nlp/PURE
 8) PRGC[7] 
+9）OneRel: OneRel: Joint Entity and Relation Extraction with One Module in One Step
 
 数据集 DuIE2.0 
 

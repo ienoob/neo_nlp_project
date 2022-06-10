@@ -35,8 +35,10 @@ import os
 import time
 import pickle
 from bs4 import BeautifulSoup
+from spiders.selenium_spider import get_cookie
 
 def spider():
+    cookies = get_cookie()
     fail_list = []
     i = 0
     for k, v in data_dict_list:
@@ -66,11 +68,15 @@ def spider():
 
         # r = requests.get(url, headers=HEADER)
 
-        content = get_content(url)
+        content = get_content(url, cookies=cookies)
         if content is None:
             continue
         if k not in content:
-            break
+            print("refresh cookie")
+            cookies = get_cookie()
+            print("get_data: {}".format(len(os.listdir("F:\download2\\tyc\\"))))
+            continue
+            # break
         soup = BeautifulSoup(content, "html.parser")
         item_list_v1 = soup.find_all("div", {"class": "company"})
 

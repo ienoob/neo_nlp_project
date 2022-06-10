@@ -40,7 +40,7 @@ def spider():
             if url[:5] == "/item":
                 url = "https://baike.baidu.com" + url
             url_id = hashlib.md5(url.encode("utf-8")).hexdigest()
-            save_path = "F:\download\\baidubaike\\{}.html".format(url_id)
+            save_path = "F:\download2\\baidubaike\\{}.html".format(url_id)
 
             if os.path.exists(save_path):
                 continue
