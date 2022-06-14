@@ -128,6 +128,19 @@ def investor_v3():
         # break
 
 
+def tyc_investor():
+    soup = BeautifulSoup(html, "html.parser")
+    zz_list = []
+
+    item_list = soup.find_all("a", {"class": "brand sv-search-company-brand"})
+    for item in item_list:
+        span_label = item.find("span", {"class": "tag-common -primary-bg ml8"})
+        if span_label and span_label.text == "投资机构":
+            print(row["investor"])
+            company = item.find("span", {"class": "search-company-name hover"})
+            if company:
+                # bit += 1
+                zz_list.append(company.text)
 
 if __name__ == "__main__":
     investor_v1()
