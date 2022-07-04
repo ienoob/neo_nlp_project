@@ -16,7 +16,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import BertModel, BertTokenizerFast
 
 """
-    这是一个基于bert的多分类模型，对于二分类、多标签分类，模型比较类似，需要修改输出结果以及损失函数就可以了
+    这是一个基于bert的多分类模型，对于二分类、多标签分类，模型比较类似，修改输出结果以及损失函数就可以了
     这里演示了如何训练和预测
 """
 
