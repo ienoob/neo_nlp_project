@@ -10,9 +10,7 @@
 import numpy as np
 import json
 import random
-import requests
 from spiders.base_spider import get_content
-import pandas as pd
 
 
 
