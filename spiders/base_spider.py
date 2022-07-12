@@ -57,7 +57,7 @@ def get_content(url, retry=0, max_time=1, cookies=dict()):
 
 
 
-def get_commom_content(url, retry=0, max_time=3, use_proxy=False, cookie=""):
+def get_commom_content(url, retry=0, max_time=3, use_proxy=False, cookie="", decoding="utf-8"):
 	if retry >= max_time:
 		print("retry out of times")
 		return None
@@ -78,9 +78,9 @@ def get_commom_content(url, retry=0, max_time=3, use_proxy=False, cookie=""):
 		return get_commom_content(url, retry + 1)
 	if r.status_code == 403:
 		print("403 warning")
-		return None
+		return 403
 	try:
-		content = r.content.decode("utf-8")
+		content = r.content.decode(decoding)
 	except Exception as e:
 		print(e)
 		content = None

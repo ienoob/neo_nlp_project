@@ -43,6 +43,9 @@ def spider():
         if i < 0 or k[-2:] == "公司" or  "\n" in k or "?" in k or "/" in k or "&" in k or "*" in k or "'" in k or "|" in k:
             i += 1
             continue
+        if "\\" in k:
+            i += 1
+            continue
         print("{} start search".format(k))
         path = "F:\download2\\tyc\\{}.html".format(k)
         if os.path.exists(path):

@@ -14,9 +14,9 @@ from selenium import webdriver
 def get_cookie():
     # 声明调用哪个浏览器，本文使用的是Chrome，其他浏览器同理。有如下两种方法及适用情况
     # driver = webdriver.Chrome()#把Chromedriver放到python安装路径里
-    driver = webdriver.Chrome( executable_path="D:\\xxxx\\chromedriver_win32_96\\chromedriver.exe")#没有把Chromedriver放到python安装路径
+    driver = webdriver.Chrome( executable_path="D:\\xxxx\\chromedriver_win32\\chromedriver.exe")#没有把Chromedriver放到python安装路径
 
-    url = "https://www.tianyancha.com/search?key=%E8%B4%A4%E5%90%88%E5%BA%84"
+    url = "https://www.tianyancha.com/search?key=%E5%8C%97%E4%BA%AC%E6%9C%9D%E5%AE%89%E5%8C%BB%E5%AD%A6"
 
     driver.get(url)
     cookies = {}

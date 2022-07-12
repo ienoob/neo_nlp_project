@@ -32,7 +32,13 @@ def spider():
         if i < 0 or k[-2:] == "公司" or  "\n" in k or "?" in k or "/" in k or "&" in k or "*" in k or "'" in k or "|" in k or ">" in k or "." in k or ":" in k or '"' in k or "<" in k:
             i += 1
             continue
-        if k in ["AUX"]:
+        if ", " in k:
+            i += 1
+            continue
+        if "\\" in k:
+            i += 1
+            continue
+        if k in ["AUX", "KOL\KOC", "Google\Facebook"]:
             i += 1
             continue
         path = "F:\download2\\baike\{}.html".format(k)
