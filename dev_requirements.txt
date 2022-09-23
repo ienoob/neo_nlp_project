@@ -33,7 +33,7 @@ opt-einsum==3.3.0
 outcome==1.1.0
 packaging==20.9
 pandas==1.4.2
-protobuf==3.16.0
+protobuf==3.18.3
 psutil==5.9.1
 pyasn1==0.4.8
 pyasn1-modules==0.2.8
