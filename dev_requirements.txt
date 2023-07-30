@@ -24,7 +24,7 @@ idna==2.10
 joblib==1.0.1
 keras-nightly==2.5.0.dev2021032900
 Keras-Preprocessing==1.1.2
-lxml==4.9.0
+lxml==4.9.1
 Markdown==3.3.4
 memory-profiler==0.60.0
 numpy==1.19.5
